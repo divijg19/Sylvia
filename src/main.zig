@@ -1,4 +1,5 @@
 const std = @import("std");
+const client = @import("llm/client.zig");
 
 // The single source of truth for our runtime configuration
 pub const Config = struct {
@@ -110,10 +111,15 @@ pub fn main() !void {
             std.log.info("Target URL: {s}", .{config.url});
             std.log.info("Model: {s}", .{config.model});
             if (config.api_key) |key| {
-                std.log.info("API Key:[Set, length: {d}]", .{key.len});
+                std.log.info("API Key: [Set, length: {d}]", .{key.len});
             } else {
                 std.log.info("API Key: [Not Set]", .{});
             }
+
+            // v0.0.3 Network Ping Execution
+            client.pingProvider(allocator, config) catch |err| {
+                std.log.err("Ping failed with error: {any}", .{err});
+            };
         } else if (std.mem.eql(u8, cmd, "run")) {
             std.log.info("Run command not yet implemented. Wait for v0.1.0+", .{});
         } else {
