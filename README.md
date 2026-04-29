@@ -72,7 +72,7 @@ mv zig-out/bin/sylvia /usr/local/bin/sylvia
 By default, `Sylvia` looks for a local Ollama instance running on port `11434`.
 
 ```bash
-`sylvia` run "Refactor src/memory/context.zig to use an ArenaAllocator"
+sylvia run "Refactor src/memory/context.zig to use an ArenaAllocator"
 ```
 
 ### Cloud API Execution (Blazing Fast)
@@ -84,7 +84,7 @@ export SYLVA_URL="https://integrate.api.nvidia.com/v1"
 export SYLVA_API_KEY="nvapi-YOUR-KEY"
 export SYLVA_MODEL="qwen2.5-coder-32b-instruct"
 
-`sylvia` run "Write a comprehensive test suite for the HTTP parser"
+sylvia run "Write a comprehensive test suite for the HTTP parser"
 ```
 
 ---
