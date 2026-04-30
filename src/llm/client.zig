@@ -23,64 +23,63 @@ pub fn pingProvider(allocator: std.mem.Allocator, config: Config) !void {
         .temperature = 0.0, // Force deterministic output
     };
 
-    // Zig 0.15: Bypass ArrayList entirely and directly allocate the JSON string
-    const json_payload = try std.json.stringifyAlloc(allocator, payload, .{});
-    defer allocator.free(json_payload);
+    // Zig 0.15.2: The new idiomatic JSON Stringify API
+    var out: std.io.Writer.Allocating = .init(allocator);
+    try std.json.Stringify.value(payload, .{}, &out.writer);
 
-    // 2. Format the URL strictly (ensure no trailing slash issues)
+    var arr = out.toArrayList();
+    defer arr.deinit(allocator);
+    const json_payload = arr.items;
+
+    // 2. Format the URL strictly
     const base_url = if (std.mem.endsWith(u8, config.url, "/")) config.url[0 .. config.url.len - 1] else config.url;
     const full_url = try std.fmt.allocPrint(allocator, "{s}/chat/completions", .{base_url});
     defer allocator.free(full_url);
-
-    const uri = try std.Uri.parse(full_url);
 
     // 3. Setup HTTP Client & Headers
     var client = std.http.Client{ .allocator = allocator };
     defer client.deinit();
 
-    // Zero-allocation header array management
-    var headers_buffer: [2]std.http.Header = undefined;
-    var headers_count: usize = 0;
-
-    headers_buffer[headers_count] = .{ .name = "Content-Type", .value = "application/json" };
-    headers_count += 1;
+    var headers = std.http.Client.Request.Headers{
+        .content_type = .{ .override = "application/json" },
+    };
 
     var auth_header: ?[]u8 = null;
     defer if (auth_header) |ah| allocator.free(ah);
 
     if (config.api_key) |key| {
         auth_header = try std.fmt.allocPrint(allocator, "Bearer {s}", .{key});
-        headers_buffer[headers_count] = .{ .name = "Authorization", .value = auth_header.? };
-        headers_count += 1;
+        headers.authorization = .{ .override = auth_header.? };
     }
-
-    const headers_slice = headers_buffer[0..headers_count];
 
     std.log.info("Sending POST to {s}...", .{full_url});
 
-    // 4. Open and Send Request
-    var header_buf: [4096]u8 = undefined;
-    var req = try client.open(.POST, uri, .{
-        .server_header_buffer = &header_buf,
-        .extra_headers = headers_slice,
-    });
-    defer req.deinit();
+    // 4. Send the Request using the high-level fetch() API
+    var response_out: std.io.Writer.Allocating = .init(allocator);
 
-    req.transfer_encoding = .{ .content_length = json_payload.len };
-    try req.send();
-    try req.writeAll(json_payload);
-    try req.finish();
-    try req.wait();
+    // fetch() does start, send, writeAll, finish, and wait in a single command.
+    const fetch_result = client.fetch(.{
+        .method = .POST,
+        .location = .{ .url = full_url },
+        .headers = headers,
+        .payload = json_payload,
+        .response_writer = &response_out.writer,
+    }) catch |err| {
+        // Guarantee memory cleanup if the network connection fails
+        var arr_err = response_out.toArrayList();
+        arr_err.deinit(allocator);
+        return err;
+    };
 
-    if (req.response.status != .ok) {
-        std.log.err("HTTP Error: {d} {s}", .{ @intFromEnum(req.response.status), req.response.status.phrase() orelse "" });
+    // 5. Extract the downloaded response bytes safely
+    var response_arr = response_out.toArrayList();
+    defer response_arr.deinit(allocator);
+    const response_bytes = response_arr.items;
+
+    if (fetch_result.status != .ok) {
+        std.log.err("HTTP Error: {d} {s}", .{ @intFromEnum(fetch_result.status), fetch_result.status.phrase() orelse "" });
         return error.HttpRequestFailed;
     }
-
-    // 5. Read the Response
-    // Zig 0.15: Reads stream directly into a newly allocated string slice
-    const response_body = try req.reader().readAllAlloc(allocator, 1024 * 1024 * 10); // Cap at 10MB
-    defer allocator.free(response_body);
 
     // 6. Parse the JSON Response
     const ResponseMessage = struct {
@@ -93,8 +92,8 @@ pub fn pingProvider(allocator: std.mem.Allocator, config: Config) !void {
         choices: []Choice,
     };
 
-    const parsed = try std.json.parseFromSlice(ChatResponse, allocator, response_body, .{
-        .ignore_unknown_fields = true, // Safe guard for unexpected provider metadata
+    const parsed = try std.json.parseFromSlice(ChatResponse, allocator, response_bytes, .{
+        .ignore_unknown_fields = true,
     });
     defer parsed.deinit();
 
