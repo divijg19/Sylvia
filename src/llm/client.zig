@@ -1,4 +1,5 @@
 const std = @import("std");
+const Context = @import("../memory/context.zig").Context;
 const Config = @import("../main.zig").Config;
 
 pub fn pingProvider(allocator: std.mem.Allocator, config: Config) !void {
@@ -102,6 +103,94 @@ pub fn pingProvider(allocator: std.mem.Allocator, config: Config) !void {
         std.log.info("SUCCESS! LLM Replied: {s}", .{parsed.value.choices[0].message.content});
     } else {
         std.log.err("Received successful HTTP response, but no choices in JSON.", .{});
+        return error.InvalidJsonResponse;
+    }
+}
+
+// --- NEW: The Cognitive Loop Fetcher ---
+pub fn getChatCompletion(allocator: std.mem.Allocator, config: Config, ctx: *const Context) ![]const u8 {
+    const Message = struct {
+        role: []const u8,
+        content: []const u8,
+    };
+    const Payload = struct {
+        model: []const u8,
+        messages: []Message,
+        temperature: f32,
+    };
+
+    // 1. Build the dynamic messages array from the Context Ring-Buffer
+    var messages: std.ArrayList(Message) = .empty;
+    defer messages.deinit(allocator);
+
+    // System prompt goes first
+    try messages.append(allocator, .{ .role = "system", .content = ctx.system_prompt });
+
+    // Add all rolling history
+    for (ctx.history.items) |turn| {
+        try messages.append(allocator, .{ .role = turn.role, .content = turn.content });
+    }
+
+    const payload = Payload{
+        .model = config.model,
+        .messages = messages.items,
+        .temperature = 0.0, // 0.0 prevents hallucinations
+    };
+
+    // 2. Serialize JSON
+    var out: std.io.Writer.Allocating = .init(allocator);
+    try std.json.Stringify.value(payload, .{}, &out.writer);
+    var arr = out.toArrayList();
+    defer arr.deinit(allocator);
+    const json_payload = arr.items;
+
+    // 3. HTTP Setup
+    const base_url = if (std.mem.endsWith(u8, config.url, "/")) config.url[0 .. config.url.len - 1] else config.url;
+    const full_url = try std.fmt.allocPrint(allocator, "{s}/chat/completions", .{base_url});
+    defer allocator.free(full_url);
+
+    var client = std.http.Client{ .allocator = allocator };
+    defer client.deinit();
+
+    var headers = std.http.Client.Request.Headers{
+        .content_type = .{ .override = "application/json" },
+    };
+
+    var auth_header: ?[]u8 = null;
+    defer if (auth_header) |ah| allocator.free(ah);
+    if (config.api_key) |key| {
+        auth_header = try std.fmt.allocPrint(allocator, "Bearer {s}", .{key});
+        headers.authorization = .{ .override = auth_header.? };
+    }
+
+    // 4. Fetch
+    var response_out: std.io.Writer.Allocating = .init(allocator);
+    const fetch_result = try client.fetch(.{
+        .method = .POST,
+        .location = .{ .url = full_url },
+        .headers = headers,
+        .payload = json_payload,
+        .response_writer = &response_out.writer,
+    });
+
+    var response_arr = response_out.toArrayList();
+    defer response_arr.deinit(allocator);
+    const response_bytes = response_arr.items;
+
+    if (fetch_result.status != .ok) {
+        std.log.err("HTTP Error: {d} {s}", .{ @intFromEnum(fetch_result.status), fetch_result.status.phrase() orelse "" });
+        return error.HttpRequestFailed;
+    }
+
+    // 5. Parse output
+    const ChatResponse = struct { choices: []struct { message: struct { content: []const u8 } } };
+    const parsed = try std.json.parseFromSlice(ChatResponse, allocator, response_bytes, .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+
+    if (parsed.value.choices.len > 0) {
+        // Return a duplicated string so it safely outlives the JSON parser de-initialization
+        return allocator.dupe(u8, parsed.value.choices[0].message.content);
+    } else {
         return error.InvalidJsonResponse;
     }
 }
