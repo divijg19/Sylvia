@@ -7,9 +7,12 @@ pub fn listFiles(allocator: std.mem.Allocator, dir_path: []const u8) ![]const u8
     };
     defer dir.close();
 
-    var output = std.ArrayList(u8).init(allocator);
-    defer output.deinit();
-    const writer = output.writer();
+    // Zig 0.15.2: Use unmanaged ArrayList
+    var output: std.ArrayList(u8) = .empty;
+    defer output.deinit(allocator);
+
+    // Pass the allocator directly to the writer
+    const writer = output.writer(allocator);
 
     var walker = try dir.walk(allocator);
     defer walker.deinit();
@@ -39,24 +42,38 @@ pub fn readFile(allocator: std.mem.Allocator, file_path: []const u8) ![]const u8
     };
     defer file.close();
 
-    // Read file up to 1MB max for safety
-    const content = file.readToEndAlloc(allocator, 1024 * 1024) catch |err| {
-        return std.fmt.allocPrint(allocator, "Error reading file: {any}", .{err});
-    };
-    defer allocator.free(content);
+    // Zig 0.15.2: Use unmanaged ArrayList
+    var output: std.ArrayList(u8) = .empty;
+    defer output.deinit(allocator);
 
-    // Prepend line numbers
-    var output = std.ArrayList(u8).init(allocator);
-    defer output.deinit();
-    const writer = output.writer();
+    // Pass the allocator directly to the writer
+    const writer = output.writer(allocator);
 
-    var line_num: usize = 1;
-    var lines = std.mem.splitSequence(u8, content, "\n");
+    // Read entire file
+    const file_content = try file.readToEndAlloc(allocator, 1024 * 1024);
+    defer allocator.free(file_content);
 
-    while (lines.next()) |line| {
-        try writer.print("{d} | {s}\n", .{ line_num, line });
-        line_num += 1;
+    var line_number: usize = 1;
+    var start: usize = 0;
+
+    // Process each line
+    for (file_content, 0..) |char, i| {
+        if (char == '\n') {
+            const line = file_content[start..i];
+            try writer.print("{d:>4} | {s}\n", .{ line_number, line });
+            line_number += 1;
+            start = i + 1;
+        }
     }
 
+    // Handle the last line if it doesn't end with newline
+    if (start < file_content.len) {
+        const line = file_content[start..];
+        try writer.print("{d:>4} | {s}\n", .{ line_number, line });
+    }
+
+    if (output.items.len == 0) {
+        return allocator.dupe(u8, "File is empty.");
+    }
     return allocator.dupe(u8, output.items);
 }
