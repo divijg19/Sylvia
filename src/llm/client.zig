@@ -167,58 +167,83 @@ pub fn getChatCompletion(allocator: std.mem.Allocator, config: Config, ctx: *con
         headers.authorization = .{ .override = auth_header.? };
     }
 
-    // 4. Fetch (streaming)
-    var response_out: std.io.Writer.Allocating = .init(allocator);
+    // 4. Fetch (streaming) using a custom SSE writer
+    var sse_ctx = struct {
+        allocator: std.mem.Allocator,
+        full_response: std.ArrayList(u8) = .empty,
+        line_buffer: std.ArrayList(u8) = .empty,
+
+        pub const Error = error{ OutOfMemory };
+        pub const Writer = std.io.GenericWriter(*@This(), Error, writeFn);
+
+        pub fn writer(self: *@This()) Writer {
+            return Writer{ .context = self };
+        }
+
+        fn writeFn(sctx: *@This(), bytes: []const u8) Error!usize {
+            for (bytes) |b| {
+                if (b == '\n') {
+                    const line = sctx.line_buffer.items;
+                    if (line.len != 0 and std.mem.startsWith(u8, line, "data: ")) {
+                        const json_str = std.mem.trim(u8, line[6..], " \r");
+                        if (!std.mem.eql(u8, json_str, "[DONE]") and json_str.len != 0) {
+                            const Delta = struct { content: ?[]const u8 = null };
+                            const Choice = struct { delta: Delta = .{} };
+                            const SsePayload = struct { choices: []Choice = &[_]Choice{} };
+
+                            const parsed_res = std.json.parseFromSlice(SsePayload, sctx.allocator, json_str, .{ .ignore_unknown_fields = true });
+                            if (parsed_res) |parsed| {
+                                defer parsed.deinit();
+                                if (parsed.value.choices.len > 0) {
+                                    if (parsed.value.choices[0].delta.content) |content| {
+                                        var stdout_buf: [1024]u8 = undefined;
+                                        var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
+                                        const stdout = &stdout_writer.interface;
+                                        const tui = @import("../ui/tui.zig");
+                                        stdout.print("{s}{s}{s}", .{ tui.blue, content, tui.reset }) catch {};
+
+                                        for (content) |c| {
+                                            try sctx.full_response.append(sctx.allocator, c);
+                                        }
+                                    }
+                                }
+                            } else |_| {
+                                // ignore parse errors
+                            }
+                        }
+                    }
+                    sctx.line_buffer.clearRetainingCapacity();
+                } else {
+                    sctx.line_buffer.append(sctx.allocator, b) catch return Error.OutOfMemory;
+                }
+            }
+            return bytes.len;
+        }
+    }{ .allocator = allocator };
+
+    var sse_writer = sse_ctx.writer();
+    var sse_buf: [1024]u8 = undefined;
+    var adapter = sse_writer.adaptToNewApi(&sse_buf);
+
     const fetch_result = try client.fetch(.{
         .method = .POST,
         .location = .{ .url = full_url },
         .headers = headers,
         .payload = json_payload,
-        .response_writer = &response_out.writer,
+        .response_writer = &adapter.new_interface,
     });
-
-    var response_arr = response_out.toArrayList();
-    defer response_arr.deinit(allocator);
-    const response_bytes = response_arr.items;
 
     if (fetch_result.status != .ok) {
         std.log.err("HTTP Error: {d} {s}", .{ @intFromEnum(fetch_result.status), fetch_result.status.phrase() orelse "" });
+        // clean up
+        sse_ctx.full_response.deinit(allocator);
+        sse_ctx.line_buffer.deinit(allocator);
         return error.HttpRequestFailed;
     }
 
-    // 5. Parse SSE-style chunks and stream tokens to TUI while building the full response
-    var full: std.ArrayList(u8) = .empty;
-    defer full.deinit(allocator);
-
-    var chunks = std.mem.splitSequence(u8, response_bytes, "\n\n");
-    while (chunks.next()) |chunk| {
-        // Each chunk may contain multiple lines; look for lines starting with "data: "
-        var lines = std.mem.splitSequence(u8, chunk, "\n");
-        while (lines.next()) |line| {
-            if (std.mem.startsWith(u8, line, "data: ")) {
-                const json_part = line[6..];
-                const StreamingChunk = struct {
-                    choices: []struct { delta: struct { content: []const u8 } },
-                };
-                const parsed = std.json.parseFromSlice(StreamingChunk, allocator, json_part, .{ .ignore_unknown_fields = true }) catch null;
-                if (parsed) |p| {
-                    if (p.value.choices.len > 0) {
-                        const content = p.value.choices[0].delta.content;
-                        if (content.len > 0) {
-                            const tui = @import("../ui/tui.zig");
-                            tui.printColor(tui.blue, content);
-                            // append to full
-                            for (content) |c| {
-                                try full.append(allocator, c);
-                            }
-                        }
-                    }
-                    p.deinit();
-                }
-            }
-        }
-    }
-
-    // Return duplicated full response
-    return allocator.dupe(u8, full.items);
+    // Duplicate the accumulated response
+    const result = try allocator.dupe(u8, sse_ctx.full_response.items);
+    sse_ctx.full_response.deinit(allocator);
+    sse_ctx.line_buffer.deinit(allocator);
+    return result;
 }
