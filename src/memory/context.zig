@@ -23,6 +23,7 @@ pub const Context = struct {
             \\1. list_files: <path>
             \\2. read_file: <path>
             \\3. replace_in_file: <path>, <old_text>, <new_text>
+            \\4. run_shell: <command>
             \\
             \\Use this exact format to act:
             \\<sylvia_tool>

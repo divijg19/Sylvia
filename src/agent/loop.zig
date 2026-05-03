@@ -3,6 +3,7 @@ const Config = @import("../main.zig").Config;
 const Context = @import("../memory/context.zig").Context;
 const parser = @import("../llm/parser.zig");
 const fs = @import("../tools/fs.zig");
+const shell = @import("../tools/shell.zig");
 const prompt = @import("../ui/prompt.zig");
 const tui = @import("../ui/tui.zig");
 const client = @import("../llm/client.zig");
@@ -40,8 +41,24 @@ fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall) ![]const u8 {
         return fs.replaceInFile(allocator, path, old_text, new_text) catch |err| {
             return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
         };
+    } else if (std.mem.eql(u8, tc.name, "run_shell")) {
+        const command = tc.args.get("command") orelse return allocator.dupe(u8, "Error: Missing 'command' argument.");
+
+        const action_desc = try std.fmt.allocPrint(allocator, "Run shell command: {s}", .{command});
+        defer allocator.free(action_desc);
+
+        const allowed = prompt.askPermission(action_desc) catch |err| {
+            return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
+        };
+        if (!allowed) {
+            return allocator.dupe(u8, "Observation: User denied this action.");
+        }
+
+        return shell.runShell(allocator, command) catch |err| {
+            return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
+        };
     }
-    return std.fmt.allocPrint(allocator, "Error: Tool '{s}' not found. Available: list_files, read_file, replace_in_file", .{tc.name});
+    return std.fmt.allocPrint(allocator, "Error: Tool '{s}' not found. Available: list_files, read_file, replace_in_file, run_shell", .{tc.name});
 }
 
 pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8) !void {
