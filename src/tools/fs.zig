@@ -78,28 +78,10 @@ pub fn readFile(allocator: std.mem.Allocator, file_path: []const u8) ![]const u8
     return allocator.dupe(u8, output.items);
 }
 
-/// Pauses the agentic loop and demands human terminal approval.
-pub fn askPermission(action_desc: []const u8) !bool {
-    const stdout = std.fs.File.stdout().writer();
-    const stdin = std.fs.File.stdin().reader();
-
-    try stdout.print("\n⚠️  [BLAST RADIUS] Sylvia requested a dangerous action:\n", .{});
-    try stdout.print("-> {s}\n", .{action_desc});
-    try stdout.print("Allow this action? [y/N]: ", .{});
-
-    var buf: [16]u8 = undefined;
-    if (try stdin.readUntilDelimiterOrEof(&buf, '\n')) |line| {
-        const trimmed = std.mem.trim(u8, line, "\r ");
-        if (std.mem.eql(u8, trimmed, "y") or std.mem.eql(u8, trimmed, "Y")) {
-            return true;
-        }
-    }
-
-    return false; // Defaults to false on any other key
-}
+// Note: `askPermission` has been moved to `src/ui/prompt.zig`.
 
 pub fn replaceInFile(allocator: std.mem.Allocator, file_path: []const u8, old_text: []const u8, new_text: []const u8) ![]const u8 {
-    const file = std.fs.cwd().openFile(file_path, .{}) catch |err| {
+    const file = std.fs.cwd().openFile(file_path, .{ .mode = .read_write }) catch |err| {
         return std.fmt.allocPrint(allocator, "Error opening file: {any}", .{err});
     };
     defer file.close();
@@ -116,12 +98,9 @@ pub fn replaceInFile(allocator: std.mem.Allocator, file_path: []const u8, old_te
     defer allocator.free(replaced);
     _ = std.mem.replace(u8, content, old_text, new_text, replaced);
 
-    const out_file = std.fs.cwd().createFile(file_path, .{ .truncate = true }) catch |err| {
-        return std.fmt.allocPrint(allocator, "Error writing file: {any}", .{err});
-    };
-    defer out_file.close();
-
-    try out_file.writeAll(replaced);
+    try file.seekTo(0);
+    try file.setEndPos(0);
+    try file.writeAll(replaced);
 
     return std.fmt.allocPrint(allocator, "Successfully replaced text in {s}.", .{file_path});
 }

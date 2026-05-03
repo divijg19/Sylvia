@@ -14,6 +14,7 @@ pub fn pingProvider(allocator: std.mem.Allocator, config: Config) !void {
         model: []const u8,
         messages: []const Message,
         temperature: f32,
+        stream: bool,
     };
 
     const payload = Payload{
@@ -22,6 +23,7 @@ pub fn pingProvider(allocator: std.mem.Allocator, config: Config) !void {
             .{ .role = "user", .content = "Reply with exactly the word 'pong' and nothing else." },
         },
         .temperature = 0.0, // Force deterministic output
+        .stream = false,
     };
 
     // Zig 0.15.2: The new idiomatic JSON Stringify API
@@ -117,6 +119,7 @@ pub fn getChatCompletion(allocator: std.mem.Allocator, config: Config, ctx: *con
         model: []const u8,
         messages: []Message,
         temperature: f32,
+        stream: bool,
     };
 
     // 1. Build the dynamic messages array from the Context Ring-Buffer
@@ -135,6 +138,7 @@ pub fn getChatCompletion(allocator: std.mem.Allocator, config: Config, ctx: *con
         .model = config.model,
         .messages = messages.items,
         .temperature = 0.0, // 0.0 prevents hallucinations
+        .stream = true,
     };
 
     // 2. Serialize JSON
@@ -163,7 +167,7 @@ pub fn getChatCompletion(allocator: std.mem.Allocator, config: Config, ctx: *con
         headers.authorization = .{ .override = auth_header.? };
     }
 
-    // 4. Fetch
+    // 4. Fetch (streaming)
     var response_out: std.io.Writer.Allocating = .init(allocator);
     const fetch_result = try client.fetch(.{
         .method = .POST,
@@ -182,15 +186,39 @@ pub fn getChatCompletion(allocator: std.mem.Allocator, config: Config, ctx: *con
         return error.HttpRequestFailed;
     }
 
-    // 5. Parse output
-    const ChatResponse = struct { choices: []struct { message: struct { content: []const u8 } } };
-    const parsed = try std.json.parseFromSlice(ChatResponse, allocator, response_bytes, .{ .ignore_unknown_fields = true });
-    defer parsed.deinit();
+    // 5. Parse SSE-style chunks and stream tokens to TUI while building the full response
+    var full: std.ArrayList(u8) = .empty;
+    defer full.deinit(allocator);
 
-    if (parsed.value.choices.len > 0) {
-        // Return a duplicated string so it safely outlives the JSON parser de-initialization
-        return allocator.dupe(u8, parsed.value.choices[0].message.content);
-    } else {
-        return error.InvalidJsonResponse;
+    var chunks = std.mem.splitSequence(u8, response_bytes, "\n\n");
+    while (chunks.next()) |chunk| {
+        // Each chunk may contain multiple lines; look for lines starting with "data: "
+        var lines = std.mem.splitSequence(u8, chunk, "\n");
+        while (lines.next()) |line| {
+            if (std.mem.startsWith(u8, line, "data: ")) {
+                const json_part = line[6..];
+                const StreamingChunk = struct {
+                    choices: []struct { delta: struct { content: []const u8 } },
+                };
+                const parsed = std.json.parseFromSlice(StreamingChunk, allocator, json_part, .{ .ignore_unknown_fields = true }) catch null;
+                if (parsed) |p| {
+                    if (p.value.choices.len > 0) {
+                        const content = p.value.choices[0].delta.content;
+                        if (content.len > 0) {
+                            const tui = @import("../ui/tui.zig");
+                            tui.printColor(tui.blue, content);
+                            // append to full
+                            for (content) |c| {
+                                try full.append(allocator, c);
+                            }
+                        }
+                    }
+                    p.deinit();
+                }
+            }
+        }
     }
+
+    // Return duplicated full response
+    return allocator.dupe(u8, full.items);
 }

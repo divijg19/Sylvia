@@ -84,7 +84,7 @@ pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8) !
 
         switch (action) {
             .final_answer => |ans| {
-                std.log.info("\n🎉 FINAL ANSWER:\n{s}\n", .{ans});
+                tui.printColor(tui.green, ans);
                 break;
             },
             .none => {

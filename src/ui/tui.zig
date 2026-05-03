@@ -6,6 +6,7 @@ pub const green = "\x1b[32m";
 pub const yellow = "\x1b[33m";
 pub const blue = "\x1b[34m";
 pub const magenta = "\x1b[35m";
+pub const cyan = "\x1b[36m";
 
 pub fn printColor(color: []const u8, text: []const u8) void {
     var stdout_buf: [1024]u8 = undefined;
