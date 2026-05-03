@@ -4,6 +4,7 @@ const Context = @import("../memory/context.zig").Context;
 const parser = @import("../llm/parser.zig");
 const fs = @import("../tools/fs.zig");
 const prompt = @import("../ui/prompt.zig");
+const tui = @import("../ui/tui.zig");
 const client = @import("../llm/client.zig");
 const truncator = @import("../memory/truncator.zig");
 
@@ -26,6 +27,8 @@ fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall) ![]const u8 {
 
         const action_desc = try std.fmt.allocPrint(allocator, "Modify file: {s}", .{path});
         defer allocator.free(action_desc);
+
+        tui.printDiff(old_text, new_text);
 
         const allowed = prompt.askPermission(action_desc) catch |err| {
             return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
@@ -71,7 +74,7 @@ pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8) !
             break;
         };
 
-        std.log.info("[Sylvia's Output]\n{s}\n", .{llm_response});
+        tui.printColor(tui.blue, llm_response);
 
         // Save the thought to global context (copies out of the dying arena)
         try ctx.appendTurn("assistant", llm_response);
@@ -90,7 +93,8 @@ pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8) !
                 try ctx.appendTurn("user", obs);
             },
             .tool_call => |tc| {
-                std.log.info("[Executing Tool]: {s}", .{tc.name});
+                const tool_name = tc.name;
+                tui.printColor(tui.magenta, tool_name);
 
                 // Execute and protect context with truncator
                 const raw_obs = try executeTool(turn_alloc, tc);

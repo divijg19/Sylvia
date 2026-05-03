@@ -1,5 +1,8 @@
 const std = @import("std");
 
+const yellow = "\x1b[33m";
+const reset = "\x1b[0m";
+
 /// Pauses execution and asks for terminal approval.
 pub fn askPermission(action_desc: []const u8) !bool {
     var stdout_buf: [1024]u8 = undefined;
@@ -10,7 +13,7 @@ pub fn askPermission(action_desc: []const u8) !bool {
     const stdin_reader = std.fs.File.stdin().reader(&stdin_buf);
     var stdin = stdin_reader.interface;
 
-    try stdout.print("\n[BLAST RADIUS] Sylvia requested a dangerous action:\n", .{});
+    try stdout.print("\n{s}[BLAST RADIUS] Sylvia requested a dangerous action:{s}\n", .{ yellow, reset });
     try stdout.print("-> {s}\n", .{action_desc});
     try stdout.print("Allow this action? [y/N]: ", .{});
     try stdout.flush();
