@@ -64,12 +64,26 @@ fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall) ![]const u8 {
 pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8) !void {
     std.log.info("Initializing Sylvia Cognitive Loop...", .{});
 
+    tui.printColor(tui.yellow, "\n[PHASE 1: Generating Execution Plan...]");
+
+    var plan_ctx = try Context.init(allocator, "You are a master software architect. Given the user's request, write a concise 3-step execution plan. Output ONLY the plan.", 2);
+    defer plan_ctx.deinit();
+    try plan_ctx.appendTurn("user", task);
+
+    const plan_text = try client.getChatCompletion(allocator, config, &plan_ctx);
+    defer allocator.free(plan_text);
+
+    const enriched_task = try std.fmt.allocPrint(allocator, "TASK: {s}\n\nEXECUTION PLAN:\n{s}\n\nStick to this plan.", .{ task, plan_text });
+    defer allocator.free(enriched_task);
+
+    tui.printColor(tui.yellow, "\n[PHASE 2: Autonomous Execution...]");
+
     // Global memory for the loop (System Prompt + Ring Buffer)
-    var ctx = try Context.init(allocator, task, 8); // Max 8 turns rolling
+    var ctx = try Context.init(allocator, enriched_task, 8); // Max 8 turns rolling
     defer ctx.deinit();
 
     // The user task kicks off the interaction
-    try ctx.appendTurn("user", task);
+    try ctx.appendTurn("user", enriched_task);
 
     var step: usize = 0;
     const max_steps: usize = 15;
