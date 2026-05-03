@@ -77,3 +77,23 @@ pub fn readFile(allocator: std.mem.Allocator, file_path: []const u8) ![]const u8
     }
     return allocator.dupe(u8, output.items);
 }
+
+/// Pauses the agentic loop and demands human terminal approval.
+pub fn askPermission(action_desc: []const u8) !bool {
+    const stdout = std.fs.File.stdout().writer();
+    const stdin = std.fs.File.stdin().reader();
+
+    try stdout.print("\n⚠️  [BLAST RADIUS] Sylvia requested a dangerous action:\n", .{});
+    try stdout.print("-> {s}\n", .{action_desc});
+    try stdout.print("Allow this action? [y/N]: ", .{});
+
+    var buf: [16]u8 = undefined;
+    if (try stdin.readUntilDelimiterOrEof(&buf, '\n')) |line| {
+        const trimmed = std.mem.trim(u8, line, "\r ");
+        if (std.mem.eql(u8, trimmed, "y") or std.mem.eql(u8, trimmed, "Y")) {
+            return true;
+        }
+    }
+
+    return false; // Defaults to false on any other key
+}
