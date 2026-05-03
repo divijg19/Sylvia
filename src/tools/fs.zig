@@ -111,8 +111,10 @@ pub fn replaceInFile(allocator: std.mem.Allocator, file_path: []const u8, old_te
         return allocator.dupe(u8, "Error: old_text not found in file.");
     }
 
-    const replaced = try std.mem.replaceAlloc(u8, allocator, content, old_text, new_text);
+    const replaced_size = std.mem.replacementSize(u8, content, old_text, new_text);
+    const replaced = try allocator.alloc(u8, replaced_size);
     defer allocator.free(replaced);
+    _ = std.mem.replace(u8, content, old_text, new_text, replaced);
 
     const out_file = std.fs.cwd().createFile(file_path, .{ .truncate = true }) catch |err| {
         return std.fmt.allocPrint(allocator, "Error writing file: {any}", .{err});
