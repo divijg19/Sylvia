@@ -173,7 +173,7 @@ pub fn getChatCompletion(allocator: std.mem.Allocator, config: Config, ctx: *con
         full_response: std.ArrayList(u8) = .empty,
         line_buffer: std.ArrayList(u8) = .empty,
 
-        pub const Error = error{ OutOfMemory };
+        pub const Error = error{OutOfMemory};
         pub const Writer = std.io.GenericWriter(*@This(), Error, writeFn);
 
         pub fn writer(self: *@This()) Writer {
