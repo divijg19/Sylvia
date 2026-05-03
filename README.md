@@ -1,7 +1,7 @@
 # `Sylvia`
 
 [![Written in Zig](https://img.shields.io/badge/Written_in-Zig-F7A41D?style=for-the-badge&logo=zig)](https://ziglang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.style=for-the-badge)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 [![No Dependencies](https://img.shields.io/badge/Dependencies-0-success?style=for-the-badge)]()
 
 `Sylvia` is a hyper-lightweight, zero-dependency, local-first coding agent runtime written entirely in Zig. It combines the rapid, bounded execution of local LLMs (like Qwen2.5-Coder or Llama-3) with a premium, terminal-native UX inspired by Claude Code.
