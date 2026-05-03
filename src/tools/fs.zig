@@ -97,3 +97,29 @@ pub fn askPermission(action_desc: []const u8) !bool {
 
     return false; // Defaults to false on any other key
 }
+
+pub fn replaceInFile(allocator: std.mem.Allocator, file_path: []const u8, old_text: []const u8, new_text: []const u8) ![]const u8 {
+    const file = std.fs.cwd().openFile(file_path, .{}) catch |err| {
+        return std.fmt.allocPrint(allocator, "Error opening file: {any}", .{err});
+    };
+    defer file.close();
+
+    const content = try file.readToEndAlloc(allocator, 10 * 1024 * 1024);
+    defer allocator.free(content);
+
+    if (std.mem.indexOf(u8, content, old_text) == null) {
+        return allocator.dupe(u8, "Error: old_text not found in file.");
+    }
+
+    const replaced = try std.mem.replaceAlloc(u8, allocator, content, old_text, new_text);
+    defer allocator.free(replaced);
+
+    const out_file = std.fs.cwd().createFile(file_path, .{ .truncate = true }) catch |err| {
+        return std.fmt.allocPrint(allocator, "Error writing file: {any}", .{err});
+    };
+    defer out_file.close();
+
+    try out_file.writeAll(replaced);
+
+    return std.fmt.allocPrint(allocator, "Successfully replaced text in {s}.", .{file_path});
+}
