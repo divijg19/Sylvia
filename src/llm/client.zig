@@ -167,11 +167,11 @@ pub fn getChatCompletion(allocator: std.mem.Allocator, config: Config, ctx: *con
         headers.authorization = .{ .override = auth_header.? };
     }
 
-    // 4. Fetch (streaming) using a custom SSE writer
-    var sse_ctx = struct {
+    // 4. Fetch (streaming) using a custom SseContext writer
+    const SseContext = struct {
         allocator: std.mem.Allocator,
-        full_response: std.ArrayList(u8) = .empty,
-        line_buffer: std.ArrayList(u8) = .empty,
+        full_response: std.ArrayList(u8),
+        line_buffer: std.ArrayList(u8),
 
         pub const Error = error{OutOfMemory};
         pub const Writer = std.io.GenericWriter(*@This(), Error, writeFn);
@@ -219,7 +219,15 @@ pub fn getChatCompletion(allocator: std.mem.Allocator, config: Config, ctx: *con
             }
             return bytes.len;
         }
-    }{ .allocator = allocator };
+    };
+
+    var sse_ctx = SseContext{
+        .allocator = allocator,
+        .full_response = .empty,
+        .line_buffer = .empty,
+    };
+    defer sse_ctx.full_response.deinit(allocator);
+    defer sse_ctx.line_buffer.deinit(allocator);
 
     var sse_writer = sse_ctx.writer();
     var sse_buf: [1024]u8 = undefined;
