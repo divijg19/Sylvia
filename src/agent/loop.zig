@@ -73,6 +73,7 @@ pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8) !
 
     var step: usize = 0;
     const max_steps: usize = 15;
+    var last_action_hash: u64 = 0;
 
     while (step < max_steps) : (step += 1) {
         std.log.info("\n================================", .{});
@@ -113,8 +114,27 @@ pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8) !
                 const tool_name = tc.name;
                 tui.printColor(tui.magenta, tool_name);
 
-                // Execute and protect context with truncator
-                const raw_obs = try executeTool(turn_alloc, tc);
+                // Compute hash of the tool name + args to prevent immediate repetition
+                var hasher = std.hash.Wyhash.init(0);
+                hasher.update(tc.name);
+                var it = tc.args.iterator();
+                while (it.next()) |entry| {
+                    hasher.update(entry.key_ptr.*);
+                    hasher.update(entry.value_ptr.*);
+                }
+                const current_hash = hasher.final();
+
+                var raw_obs: []const u8 = undefined;
+
+                if (current_hash == last_action_hash) {
+                    const anti = "SYSTEM ERROR: You just attempted the exact same action and it failed or yielded no progress. You are stuck in a loop. Re-evaluate your strategy, use a different tool, or output FINAL ANSWER.";
+                    tui.printColor(tui.yellow, "\n[ANTI-SPIRAL ACTIVATED: Blocked repeating action]");
+                    raw_obs = try turn_alloc.dupe(u8, anti);
+                } else {
+                    last_action_hash = current_hash;
+                    raw_obs = try executeTool(turn_alloc, tc);
+                }
+
                 const truncated_obs = try truncator.truncate(turn_alloc, raw_obs, 2000);
 
                 std.log.info("[Observation]\n{s}\n", .{truncated_obs});
