@@ -3,6 +3,7 @@ const Config = @import("../main.zig").Config;
 const Context = @import("../memory/context.zig").Context;
 const parser = @import("../llm/parser.zig");
 const fs = @import("../tools/fs.zig");
+const prompt = @import("../ui/prompt.zig");
 const client = @import("../llm/client.zig");
 const truncator = @import("../memory/truncator.zig");
 
@@ -18,8 +19,26 @@ fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall) ![]const u8 {
         return fs.readFile(allocator, path) catch |err| {
             return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
         };
+    } else if (std.mem.eql(u8, tc.name, "replace_in_file")) {
+        const path = tc.args.get("path") orelse return allocator.dupe(u8, "Error: Missing 'path' argument.");
+        const old_text = tc.args.get("old_text") orelse return allocator.dupe(u8, "Error: Missing 'old_text' argument.");
+        const new_text = tc.args.get("new_text") orelse return allocator.dupe(u8, "Error: Missing 'new_text' argument.");
+
+        const action_desc = try std.fmt.allocPrint(allocator, "Modify file: {s}", .{path});
+        defer allocator.free(action_desc);
+
+        const allowed = prompt.askPermission(action_desc) catch |err| {
+            return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
+        };
+        if (!allowed) {
+            return allocator.dupe(u8, "Observation: User denied this action. Try another approach.");
+        }
+
+        return fs.replaceInFile(allocator, path, old_text, new_text) catch |err| {
+            return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
+        };
     }
-    return std.fmt.allocPrint(allocator, "Error: Tool '{s}' not found. Available: list_files, read_file", .{tc.name});
+    return std.fmt.allocPrint(allocator, "Error: Tool '{s}' not found. Available: list_files, read_file, replace_in_file", .{tc.name});
 }
 
 pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8) !void {
