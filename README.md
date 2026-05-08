@@ -39,6 +39,7 @@ Most agentic frameworks are built in Python or Node.js, rely on massive dependen
 2. `read_file`: Reads files with auto-injected line numbers for precise edits. Large files are safely truncated.
 3. `replace_in_file`: Replaces exact strings. Generates a visual diff for user approval before writing.
 4. `run_shell`: Executes sandboxed shell commands (e.g., `cargo test` or `zig build`). Prompts for user approval.
+5. `search_code`: Pure Zig, cross-platform grep alternative for searching text across the codebase.
 
 ---
 
