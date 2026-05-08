@@ -68,8 +68,13 @@ fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall) ![]const u8 {
         return shell.runShell(allocator, command) catch |err| {
             return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
         };
+    } else if (std.mem.eql(u8, tc.name, "search_code")) {
+        const query = tc.args.get("query") orelse return allocator.dupe(u8, "Error: Missing 'query' argument.");
+        return fs.searchCode(allocator, ".", query) catch |err| {
+            return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
+        };
     }
-    return std.fmt.allocPrint(allocator, "Error: Tool '{s}' not found. Available: list_files, read_file, replace_lines, run_shell", .{tc.name});
+    return std.fmt.allocPrint(allocator, "Error: Tool '{s}' not found. Available: list_files, read_file, replace_lines, run_shell, search_code", .{tc.name});
 }
 
 pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8) !void {
