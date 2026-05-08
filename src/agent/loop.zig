@@ -21,12 +21,23 @@ fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall) ![]const u8 {
         return fs.readFile(allocator, path) catch |err| {
             return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
         };
-    } else if (std.mem.eql(u8, tc.name, "replace_in_file")) {
+    } else if (std.mem.eql(u8, tc.name, "replace_lines")) {
         const path = tc.args.get("path") orelse return allocator.dupe(u8, "Error: Missing 'path' argument.");
-        const old_text = tc.args.get("old_text") orelse return allocator.dupe(u8, "Error: Missing 'old_text' argument.");
+        const start_line = tc.args.get("start_line") orelse return allocator.dupe(u8, "Error: Missing 'start_line' argument.");
+        const end_line = tc.args.get("end_line") orelse return allocator.dupe(u8, "Error: Missing 'end_line' argument.");
         const new_text = tc.args.get("new_text") orelse return allocator.dupe(u8, "Error: Missing 'new_text' argument.");
 
-        const action_desc = try std.fmt.allocPrint(allocator, "Modify file: {s}", .{path});
+        const start_int = std.fmt.parseInt(usize, start_line, 10) catch |err| {
+            return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
+        };
+        const end_int = std.fmt.parseInt(usize, end_line, 10) catch |err| {
+            return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
+        };
+
+        const old_text = try fs.extractLines(allocator, path, start_int, end_int);
+        defer allocator.free(old_text);
+
+        const action_desc = try std.fmt.allocPrint(allocator, "Replace lines {d}-{d} in {s}", .{ start_int, end_int, path });
         defer allocator.free(action_desc);
 
         tui.printDiff(old_text, new_text);
@@ -38,7 +49,7 @@ fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall) ![]const u8 {
             return allocator.dupe(u8, "Observation: User denied this action. Try another approach.");
         }
 
-        return fs.replaceInFile(allocator, path, old_text, new_text) catch |err| {
+        return fs.replaceLines(allocator, path, start_int, end_int, new_text) catch |err| {
             return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
         };
     } else if (std.mem.eql(u8, tc.name, "run_shell")) {
@@ -58,7 +69,7 @@ fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall) ![]const u8 {
             return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
         };
     }
-    return std.fmt.allocPrint(allocator, "Error: Tool '{s}' not found. Available: list_files, read_file, replace_in_file, run_shell", .{tc.name});
+    return std.fmt.allocPrint(allocator, "Error: Tool '{s}' not found. Available: list_files, read_file, replace_lines, run_shell", .{tc.name});
 }
 
 pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8) !void {

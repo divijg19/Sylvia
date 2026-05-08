@@ -35,7 +35,7 @@ pub fn parseAction(allocator: std.mem.Allocator, response: []const u8) !ParseRes
             var args = std.StringHashMap([]const u8).init(allocator);
 
             // Extract predefined arguments we expect tools might use
-            const known_keys = [_][]const u8{ "path", "old_text", "new_text", "command" };
+            const known_keys = [_][]const u8{ "path", "old_text", "new_text", "command", "start_line", "end_line" };
             for (known_keys) |key| {
                 if (extractTag(inner_content, key)) |val| {
                     try args.put(key, val);
