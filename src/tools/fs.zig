@@ -35,6 +35,66 @@ pub fn listFiles(allocator: std.mem.Allocator, dir_path: []const u8) ![]const u8
     return allocator.dupe(u8, output.items);
 }
 
+/// Searches code files for a query and returns path:line matches.
+pub fn searchCode(allocator: std.mem.Allocator, dir_path: []const u8, query: []const u8) ![]const u8 {
+    var output: std.ArrayList(u8) = .empty;
+    defer output.deinit(allocator);
+    const writer = output.writer(allocator);
+
+    var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch |err| {
+        return std.fmt.allocPrint(allocator, "Error opening directory: {any}", .{err});
+    };
+    defer dir.close();
+
+    var walker = try dir.walk(allocator);
+    defer walker.deinit();
+
+    var match_count: usize = 0;
+
+    outer: while (try walker.next()) |entry| {
+        if (entry.kind != .file) {
+            continue;
+        }
+
+        if (std.mem.indexOf(u8, entry.path, ".git") != null or
+            std.mem.indexOf(u8, entry.path, "node_modules") != null or
+            std.mem.indexOf(u8, entry.path, ".zig-cache") != null or
+            std.mem.indexOf(u8, entry.path, "zig-out") != null)
+        {
+            continue;
+        }
+
+        const file = dir.openFile(entry.path, .{}) catch {
+            continue;
+        };
+        defer file.close();
+
+        const content = file.readToEndAlloc(allocator, 1024 * 1024) catch {
+            continue;
+        };
+        defer allocator.free(content);
+
+        var line_num: usize = 1;
+        var lines = std.mem.splitSequence(u8, content, "\n");
+        while (lines.next()) |line| {
+            if (std.mem.indexOf(u8, line, query) != null) {
+                try writer.print("{s}:{d}: {s}\n", .{ entry.path, line_num, std.mem.trim(u8, line, " \r") });
+                match_count += 1;
+                if (match_count > 100) {
+                    try writer.writeAll("...[Truncated: Too many matches]\n");
+                    break :outer;
+                }
+            }
+            line_num += 1;
+        }
+    }
+
+    if (output.items.len == 0) {
+        return allocator.dupe(u8, "No matches found for the query.");
+    }
+    return allocator.dupe(u8, output.items);
+}
+
 /// Extracts a 1-based inclusive line range from a file.
 pub fn extractLines(allocator: std.mem.Allocator, file_path: []const u8, start_line: usize, end_line: usize) ![]const u8 {
     if (start_line == 0 or end_line == 0 or start_line > end_line) {
