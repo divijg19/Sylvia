@@ -22,14 +22,15 @@ pub const Context = struct {
             \\Available tools:
             \\1. list_files: <path>
             \\2. read_file: <path>
-            \\3. replace_in_file: <path>, <old_text>, <new_text>
+            \\3. replace_lines: <path>, <start_line>, <end_line>, <new_text>
             \\4. run_shell: <command>
             \\
             \\Use this exact format to act:
             \\<sylvia_tool>
             \\<name>tool_name</name>
             \\<path>argument</path>
-            \\<old_text>argument</old_text>
+            \\<start_line>argument</start_line>
+            \\<end_line>argument</end_line>
             \\<new_text>argument</new_text>
             \\</sylvia_tool>
             \\
