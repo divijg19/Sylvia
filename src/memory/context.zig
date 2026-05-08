@@ -24,11 +24,12 @@ pub const Context = struct {
             \\2. read_file: <path>
             \\3. replace_lines: <path>, <start_line>, <end_line>, <new_text>
             \\4. run_shell: <command>
+            \\5. search_code: <query>
             \\
             \\Use this exact format to act:
             \\<sylvia_tool>
             \\<name>tool_name</name>
-            \\<path>argument</path>
+            \\<query>argument</query>
             \\<start_line>argument</start_line>
             \\<end_line>argument</end_line>
             \\<new_text>argument</new_text>
