@@ -9,16 +9,16 @@ pub const magenta = "\x1b[35m";
 pub const cyan = "\x1b[36m";
 
 pub fn printColor(color: []const u8, text: []const u8) void {
-    var stdout_buf: [1024]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
+    var empty: [0]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(empty[0..0]);
     const stdout = &stdout_writer.interface;
 
     stdout.print("{s}{s}{s}\n", .{ color, text, reset }) catch {};
 }
 
 pub fn printDiff(old_text: []const u8, new_text: []const u8) void {
-    var stdout_buf: [1024]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
+    var empty: [0]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(empty[0..0]);
     const stdout = &stdout_writer.interface;
 
     var old_lines = std.mem.splitSequence(u8, old_text, "\n");
