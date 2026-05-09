@@ -167,91 +167,96 @@ pub fn getChatCompletion(allocator: std.mem.Allocator, config: Config, ctx: *con
         headers.authorization = .{ .override = auth_header.? };
     }
 
-    // 4. Fetch (streaming) using a custom SseContext writer
-    const SseContext = struct {
-        allocator: std.mem.Allocator,
-        full_response: std.ArrayList(u8),
-        line_buffer: std.ArrayList(u8),
+    // 4. Perform low-level request and stream the response manually to avoid writer adapter issues
+    const uri = try std.Uri.parse(full_url);
 
-        pub const Error = error{OutOfMemory};
-        pub const Writer = std.io.GenericWriter(*@This(), Error, writeFn);
+    var req = try client.request(.POST, uri, .{ .headers = headers });
+    defer req.deinit();
 
-        pub fn writer(self: *@This()) Writer {
-            return Writer{ .context = self };
-        }
-
-        fn writeFn(sctx: *@This(), bytes: []const u8) Error!usize {
-            for (bytes) |b| {
-                if (b == '\n') {
-                    const line = sctx.line_buffer.items;
-                    if (line.len != 0 and std.mem.startsWith(u8, line, "data: ")) {
-                        const json_str = std.mem.trim(u8, line[6..], " \r");
-                        if (!std.mem.eql(u8, json_str, "[DONE]") and json_str.len != 0) {
-                            const Delta = struct { content: ?[]const u8 = null };
-                            const Choice = struct { delta: Delta = .{} };
-                            const SsePayload = struct { choices: []Choice = &[_]Choice{} };
-
-                            const parsed_res = std.json.parseFromSlice(SsePayload, sctx.allocator, json_str, .{ .ignore_unknown_fields = true });
-                            if (parsed_res) |parsed| {
-                                defer parsed.deinit();
-                                if (parsed.value.choices.len > 0) {
-                                    if (parsed.value.choices[0].delta.content) |content| {
-                                        var stdout_buf: [1024]u8 = undefined;
-                                        var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
-                                        const stdout = &stdout_writer.interface;
-                                        const tui = @import("../ui/tui.zig");
-                                        stdout.print("{s}{s}{s}", .{ tui.blue, content, tui.reset }) catch {};
-
-                                        for (content) |c| {
-                                            try sctx.full_response.append(sctx.allocator, c);
-                                        }
-                                    }
-                                }
-                            } else |_| {
-                                // ignore parse errors
-                            }
-                        }
-                    }
-                    sctx.line_buffer.clearRetainingCapacity();
-                } else {
-                    sctx.line_buffer.append(sctx.allocator, b) catch return Error.OutOfMemory;
-                }
-            }
-            return bytes.len;
-        }
-    };
-
-    var sse_ctx = SseContext{
-        .allocator = allocator,
-        .full_response = .empty,
-        .line_buffer = .empty,
-    };
-    defer sse_ctx.full_response.deinit(allocator);
-    defer sse_ctx.line_buffer.deinit(allocator);
-
-    var sse_writer = sse_ctx.writer();
-    var sse_buf: [1024]u8 = undefined;
-    var adapter = sse_writer.adaptToNewApi(&sse_buf);
-
-    const fetch_result = try client.fetch(.{
-        .method = .POST,
-        .location = .{ .url = full_url },
-        .headers = headers,
-        .payload = json_payload,
-        .response_writer = &adapter.new_interface,
-    });
-
-    if (fetch_result.status != .ok) {
-        std.log.err("HTTP Error: {d} {s}", .{ @intFromEnum(fetch_result.status), fetch_result.status.phrase() orelse "" });
-        // clean up
-        sse_ctx.full_response.deinit(allocator);
-        sse_ctx.line_buffer.deinit(allocator);
-        return error.HttpRequestFailed;
+    // Send the request body (use same pattern as fetch)
+    if (json_payload.len != 0) {
+        req.transfer_encoding = .{ .content_length = json_payload.len };
+        var body = try req.sendBodyUnflushed(&.{});
+        try body.writer.writeAll(json_payload);
+        try body.end();
+        try req.connection.?.flush();
+    } else {
+        try req.sendBodiless();
     }
 
-    // Duplicate the accumulated response
-    const result = try allocator.dupe(u8, sse_ctx.full_response.items);
-    sse_ctx.full_response.deinit(allocator);
-    sse_ctx.line_buffer.deinit(allocator);
-    return result;
+    // Allocate redirect buffer and receive response head
+    const redirect_buffer = try client.allocator.alloc(u8, 8 * 1024);
+    defer client.allocator.free(redirect_buffer);
+    var response = try req.receiveHead(redirect_buffer);
+
+    // Prepare decompress buffer if needed (reuse logic from fetch)
+    const decompress_buffer: []u8 = switch (response.head.content_encoding) {
+        .identity => &.{},
+        .zstd => try client.allocator.alloc(u8, std.compress.zstd.default_window_len),
+        .deflate, .gzip => try client.allocator.alloc(u8, std.compress.flate.max_window_len),
+        .compress => return error.UnsupportedCompressionMethod,
+    };
+    var free_decompress: bool = true;
+    if (decompress_buffer.len == 0) free_decompress = false;
+    defer if (free_decompress) client.allocator.free(decompress_buffer);
+
+    var transfer_buffer: [64]u8 = undefined;
+    var decompress: std.http.Decompress = undefined;
+    const reader = response.readerDecompressing(&transfer_buffer, &decompress, decompress_buffer);
+
+    var full_response: std.ArrayList(u8) = .empty;
+    defer full_response.deinit(allocator);
+    var line_buffer: std.ArrayList(u8) = .empty;
+    defer line_buffer.deinit(allocator);
+
+    var buf: [4096]u8 = undefined;
+    while (true) {
+        var chunk_writer = std.io.Writer.fixed(&buf);
+        const bytes_read = try reader.stream(&chunk_writer, .limited(buf.len));
+        if (bytes_read == 0) break;
+
+        const chunk = chunk_writer.buffered()[0..bytes_read];
+
+        var i: usize = 0;
+        while (i < bytes_read) : (i += 1) {
+            const b = chunk[i];
+            if (b != '\n') {
+                try line_buffer.append(allocator, b);
+            } else {
+                const line = line_buffer.items;
+                if (line.len != 0 and std.mem.startsWith(u8, line, "data: ")) {
+                    const json_str = std.mem.trim(u8, line[6..], " \r");
+                    if (!std.mem.eql(u8, json_str, "[DONE]") and json_str.len != 0) {
+                        const Delta = struct { content: ?[]const u8 = null };
+                        const Choice = struct { delta: Delta = .{} };
+                        const SsePayload = struct { choices: []Choice = &[_]Choice{} };
+
+                        const parsed_res = std.json.parseFromSlice(SsePayload, allocator, json_str, .{ .ignore_unknown_fields = true });
+                        if (parsed_res) |parsed| {
+                            defer parsed.deinit();
+                            if (parsed.value.choices.len > 0) {
+                                if (parsed.value.choices[0].delta.content) |content| {
+                                    // Print token-by-token to stdout (no newline)
+                                    const tui = @import("../ui/tui.zig");
+                                    var stdout_buf: [1024]u8 = undefined;
+                                    var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
+                                    const stdout = &stdout_writer.interface;
+                                    stdout.print("{s}{s}{s}", .{ tui.blue, content, tui.reset }) catch {};
+
+                                    for (content) |c| {
+                                        try full_response.append(allocator, c);
+                                    }
+                                }
+                            }
+                        } else |_| {
+                            // ignore parse errors silently
+                        }
+                    }
+                }
+                line_buffer.clearRetainingCapacity();
+            }
+        }
+    }
+
+    return allocator.dupe(u8, full_response.items);
 }
