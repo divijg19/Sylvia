@@ -54,7 +54,7 @@ Most agentic frameworks are built in Python or Node.js, rely on massive dependen
 Clone the repository and build the release binary:
 
 ```bash
-git clone https://github.com/yourusername/sylvia.git
+git clone https://github.com/divijg19/sylvia.git
 cd sylvia
 zig build -Doptimize=ReleaseFast
 ```

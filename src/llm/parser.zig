@@ -22,7 +22,15 @@ pub fn parseAction(allocator: std.mem.Allocator, response: []const u8) !ParseRes
     const start_tag = "<sylvia_tool>";
     const end_tag = "</sylvia_tool>";
 
-    // 1. Check for a Tool Call
+    // 1. Check for Final Answer first — if present anywhere, it wins.
+    const final_tag = "FINAL ANSWER:";
+    if (std.mem.indexOf(u8, response, final_tag)) |f_idx| {
+        // Only trim newlines/carriage returns, not spaces!
+        const ans = std.mem.trim(u8, response[f_idx + final_tag.len ..], "\r\n ");
+        return ParseResult{ .final_answer = ans };
+    }
+
+    // 2. Check for a Tool Call
     if (std.mem.indexOf(u8, response, start_tag)) |start_idx| {
         const inner_start = start_idx + start_tag.len;
         if (std.mem.indexOfPos(u8, response, inner_start, end_tag)) |end_idx| {
@@ -44,14 +52,6 @@ pub fn parseAction(allocator: std.mem.Allocator, response: []const u8) !ParseRes
 
             return ParseResult{ .tool_call = .{ .name = tool_name.?, .args = args } };
         }
-    }
-
-    // 2. Check for Final Answer
-    const final_tag = "FINAL ANSWER:";
-    if (std.mem.indexOf(u8, response, final_tag)) |f_idx| {
-        // Only trim newlines/carriage returns, not spaces!
-        const ans = std.mem.trim(u8, response[f_idx + final_tag.len ..], "\r\n ");
-        return ParseResult{ .final_answer = ans };
     }
 
     // 3. Model rambled without acting
