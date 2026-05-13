@@ -97,7 +97,10 @@ pub fn searchCode(allocator: std.mem.Allocator, dir_path: []const u8, query: []c
 
 /// Extracts a 1-based inclusive line range from a file.
 pub fn extractLines(allocator: std.mem.Allocator, file_path: []const u8, start_line: usize, end_line: usize) ![]const u8 {
-    if (start_line == 0 or end_line == 0 or start_line > end_line) {
+    if (start_line == 0) {
+        return allocator.dupe(u8, "Error: start_line must be >= 1.");
+    }
+    if (end_line == 0 or start_line > end_line) {
         return allocator.dupe(u8, "Error: Invalid line range.");
     }
 
@@ -108,6 +111,18 @@ pub fn extractLines(allocator: std.mem.Allocator, file_path: []const u8, start_l
 
     const content = try file.readToEndAlloc(allocator, 10 * 1024 * 1024);
     defer allocator.free(content);
+
+    // Count total lines
+    var total_lines: usize = 1;
+    for (content) |char| {
+        if (char == '\n') {
+            total_lines += 1;
+        }
+    }
+
+    if (start_line > total_lines) {
+        return allocator.dupe(u8, "Error: start_line is beyond the end of the file.");
+    }
 
     var output: std.ArrayList(u8) = .empty;
     defer output.deinit(allocator);
@@ -172,7 +187,10 @@ pub fn readFile(allocator: std.mem.Allocator, file_path: []const u8) ![]const u8
 
 /// Replaces a 1-based inclusive line range with new text.
 pub fn replaceLines(allocator: std.mem.Allocator, file_path: []const u8, start_line: usize, end_line: usize, new_text: []const u8) ![]const u8 {
-    if (start_line == 0 or end_line == 0 or start_line > end_line) {
+    if (start_line == 0) {
+        return allocator.dupe(u8, "Error: start_line must be >= 1.");
+    }
+    if (end_line == 0 or start_line > end_line) {
         return allocator.dupe(u8, "Error: Invalid line range.");
     }
 
@@ -183,6 +201,18 @@ pub fn replaceLines(allocator: std.mem.Allocator, file_path: []const u8, start_l
 
     const content = try file.readToEndAlloc(allocator, 10 * 1024 * 1024);
     defer allocator.free(content);
+
+    // Count total lines
+    var total_lines: usize = 1;
+    for (content) |char| {
+        if (char == '\n') {
+            total_lines += 1;
+        }
+    }
+
+    if (start_line > total_lines) {
+        return allocator.dupe(u8, "Error: start_line is beyond the end of the file. Cannot replace.");
+    }
 
     var output: std.ArrayList(u8) = .empty;
     defer output.deinit(allocator);
