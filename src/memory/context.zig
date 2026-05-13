@@ -32,11 +32,13 @@ pub const Context = struct {
             \\   Arguments: <query>
             \\
             \\RULES:
-            \\- You MUST use this exact format to act:
+            \\- You MUST use this exact XML format to act. Replace the tags with the actual argument names.
+            \\- Example of a valid action:
             \\<sylvia_tool>
-            \\<name>tool_name</name>
-            \\<arg_name>argument_value</arg_name>
+            \\<name>read_file</name>
+            \\<path>src/main.zig</path>
             \\</sylvia_tool>
+            \\
             \\- DO NOT include empty tags or arguments a tool does not need.
             \\- DO NOT output a tool call and a FINAL ANSWER in the same turn.
             \\
