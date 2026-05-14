@@ -6,7 +6,6 @@ pub fn askPermission(action_desc: []const u8) !bool {
     var empty: [0]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(empty[0..0]);
     const stdout = &stdout_writer.interface;
-
     const stdin_file = std.fs.File.stdin();
 
     try stdout.print("\n{s}⚠️  [BLAST RADIUS] Sylvia requested a dangerous action:{s}\n", .{ tui.yellow, tui.reset });
