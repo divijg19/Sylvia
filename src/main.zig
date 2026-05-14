@@ -1,6 +1,7 @@
 const std = @import("std");
 const loop = @import("agent/loop.zig");
 const client = @import("llm/client.zig");
+const truncator = @import("memory/truncator.zig");
 
 // The single source of truth for our runtime configuration
 pub const Config = struct {
@@ -93,10 +94,12 @@ pub fn main() !void {
                 task_string = args.next();
             }
         } else if (command != null and std.mem.eql(u8, command.?, "run") and task_string != null) {
-            if (std.mem.startsWith(u8, arg, "@")) {
+            if (arg.len > 1 and std.mem.startsWith(u8, arg, "@")) {
                 const file_path = arg[1..];
                 if (std.fs.cwd().readFileAlloc(allocator, file_path, 1024 * 1024 * 5)) |content| {
-                    try injected_files.writer(allocator).print("\n\n--- File: {s} ---\n{s}\n", .{ file_path, content });
+                    const safe_content = try truncator.truncate(allocator, content, 12000);
+                    defer allocator.free(safe_content);
+                    try injected_files.writer(allocator).print("\n\n--- File: {s} ---\n{s}\n", .{ file_path, safe_content });
                     allocator.free(content);
                 } else |err| {
                     std.log.warn("Could not read injected file {s}: {any}", .{ file_path, err });
