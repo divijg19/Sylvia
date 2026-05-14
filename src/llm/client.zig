@@ -15,6 +15,7 @@ pub fn pingProvider(allocator: std.mem.Allocator, config: Config) !void {
         messages: []const Message,
         temperature: f32,
         stream: bool,
+        max_tokens: usize,
     };
 
     const payload = Payload{
@@ -24,6 +25,7 @@ pub fn pingProvider(allocator: std.mem.Allocator, config: Config) !void {
         },
         .temperature = 0.0, // Force deterministic output
         .stream = false,
+        .max_tokens = 4096,
     };
 
     // Zig 0.15.2: The new idiomatic JSON Stringify API
@@ -35,8 +37,12 @@ pub fn pingProvider(allocator: std.mem.Allocator, config: Config) !void {
     const json_payload = arr.items;
 
     // 2. Format the URL strictly
-    const base_url = if (std.mem.endsWith(u8, config.url, "/")) config.url[0 .. config.url.len - 1] else config.url;
-    const full_url = try std.fmt.allocPrint(allocator, "{s}/chat/completions", .{base_url});
+    var base_url = config.url;
+    if (std.mem.endsWith(u8, base_url, "/")) base_url = base_url[0 .. base_url.len - 1];
+    const full_url = if (std.mem.endsWith(u8, base_url, "/chat/completions"))
+        try allocator.dupe(u8, base_url)
+    else
+        try std.fmt.allocPrint(allocator, "{s}/chat/completions", .{base_url});
     defer allocator.free(full_url);
 
     // 3. Setup HTTP Client & Headers
@@ -120,6 +126,7 @@ pub fn getChatCompletion(allocator: std.mem.Allocator, config: Config, ctx: *con
         messages: []Message,
         temperature: f32,
         stream: bool,
+        max_tokens: usize,
     };
 
     // 1. Build the dynamic messages array from the Context Ring-Buffer
@@ -139,6 +146,7 @@ pub fn getChatCompletion(allocator: std.mem.Allocator, config: Config, ctx: *con
         .messages = messages.items,
         .temperature = 0.0, // 0.0 prevents hallucinations
         .stream = true,
+        .max_tokens = 4096,
     };
 
     // 2. Serialize JSON
@@ -149,8 +157,12 @@ pub fn getChatCompletion(allocator: std.mem.Allocator, config: Config, ctx: *con
     const json_payload = arr.items;
 
     // 3. HTTP Setup
-    const base_url = if (std.mem.endsWith(u8, config.url, "/")) config.url[0 .. config.url.len - 1] else config.url;
-    const full_url = try std.fmt.allocPrint(allocator, "{s}/chat/completions", .{base_url});
+    var base_url = config.url;
+    if (std.mem.endsWith(u8, base_url, "/")) base_url = base_url[0 .. base_url.len - 1];
+    const full_url = if (std.mem.endsWith(u8, base_url, "/chat/completions"))
+        try allocator.dupe(u8, base_url)
+    else
+        try std.fmt.allocPrint(allocator, "{s}/chat/completions", .{base_url});
     defer allocator.free(full_url);
 
     var client = std.http.Client{ .allocator = allocator };
