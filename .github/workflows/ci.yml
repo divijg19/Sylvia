@@ -8,6 +8,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -20,9 +24,9 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Zig
-        uses: goto-bus-stop/setup-zig@v2
+        uses: mlugg/setup-zig@v2
         with:
-          version: master
+          version: 0.15.2
 
       - name: Cache Zig build artifacts
         uses: actions/cache@v4
@@ -30,7 +34,7 @@ jobs:
           path: |
             ~/.cache/zig
             .zig-cache
-          key: ${{ runner.os }}-zig-${{ hashFiles('build.zig', 'src/**') }}
+          key: ${{ runner.os }}-zig-${{ hashFiles('build.zig', 'build.zig.zon', 'src/**') }}
           restore-keys: |
             ${{ runner.os }}-zig-
 
@@ -40,11 +44,5 @@ jobs:
       - name: Build project
         run: zig build
 
-      - name: Test truncator
-        run: zig test src/memory/truncator.zig
-
-      - name: Test parser
-        run: zig test src/llm/parser.zig
-
-      - name: Test context
-        run: zig test src/memory/context.zig
+      - name: Run tests
+        run: zig build test
