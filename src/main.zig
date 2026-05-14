@@ -72,6 +72,8 @@ pub fn main() !void {
 
     var command: ?[]const u8 = null;
     var task_string: ?[]const u8 = null;
+    var injected_files: std.ArrayList(u8) = .empty;
+    defer injected_files.deinit(allocator);
 
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
@@ -89,6 +91,20 @@ pub fn main() !void {
             // If the command is 'run', the very next argument must be our task string.
             if (std.mem.eql(u8, arg, "run")) {
                 task_string = args.next();
+            }
+        } else if (command != null and std.mem.eql(u8, command.?, "run") and task_string != null) {
+            if (std.mem.startsWith(u8, arg, "@")) {
+                const file_path = arg[1..];
+                if (std.fs.cwd().readFileAlloc(allocator, file_path, 1024 * 1024 * 5)) |content| {
+                    try injected_files.writer(allocator).print("\n\n--- File: {s} ---\n{s}\n", .{ file_path, content });
+                    allocator.free(content);
+                } else |err| {
+                    std.log.warn("Could not read injected file {s}: {any}", .{ file_path, err });
+                }
+            } else {
+                std.log.err("Unknown argument or extra command: {s}", .{arg});
+                printHelp();
+                return error.InvalidArgument;
             }
         } else {
             std.log.err("Unknown argument or extra command: {s}", .{arg});
@@ -110,9 +126,18 @@ pub fn main() !void {
         } else if (std.mem.eql(u8, parsed_cmd, "run")) {
             // Check if the task string was successfully captured
             if (task_string) |task| {
-                loop.runLoop(allocator, config, task) catch |err| {
-                    std.log.err("Agent loop crashed: {any}", .{err});
-                };
+                if (injected_files.items.len > 0) {
+                    const final_task = try std.fmt.allocPrint(allocator, "{s}{s}", .{ task, injected_files.items });
+                    defer allocator.free(final_task);
+
+                    loop.runLoop(allocator, config, final_task) catch |err| {
+                        std.log.err("Agent loop crashed: {any}", .{err});
+                    };
+                } else {
+                    loop.runLoop(allocator, config, task) catch |err| {
+                        std.log.err("Agent loop crashed: {any}", .{err});
+                    };
+                }
             } else {
                 std.log.err("Missing task. Example: sylvia run \"list files in src\"", .{});
                 return error.MissingArgument;
