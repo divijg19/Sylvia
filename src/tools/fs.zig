@@ -81,7 +81,7 @@ pub fn searchCode(allocator: std.mem.Allocator, dir_path: []const u8, query: []c
                 try writer.print("{s}:{d}: {s}\n", .{ entry.path, line_num, std.mem.trim(u8, line, " \r") });
                 match_count += 1;
                 if (match_count > 100) {
-                    try writer.writeAll("...[Truncated: Too many matches]\n");
+                    try writer.writeAll("...[Truncated: Too many matches. DO NOT REPEAT THIS EXACT SEARCH. Refine your query to be more specific.]\n");
                     break :outer;
                 }
             }
