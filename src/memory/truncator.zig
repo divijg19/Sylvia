@@ -12,7 +12,7 @@ pub fn truncate(allocator: std.mem.Allocator, text: []const u8, max_len: usize) 
     const end_chunk = text[text.len - keep_len .. text.len];
     const omitted = text.len - max_len;
 
-    return try std.fmt.allocPrint(allocator, "{s}\n...[SYLVIA: TRUNCATED {d} BYTES TO PROTECT CONTEXT] ...\n{s}", .{ start_chunk, omitted, end_chunk });
+    return try std.fmt.allocPrint(allocator, "{s}\n...[SYLVIA: TRUNCATED {d} BYTES TO PROTECT CONTEXT. DO NOT REPEAT THIS ACTION. USE WHAT YOU HAVE OR REFINE YOUR SEARCH.]...\n{s}", .{ start_chunk, omitted, end_chunk });
 }
 
 // --- Tests ---
