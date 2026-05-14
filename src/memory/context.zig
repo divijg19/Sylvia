@@ -28,6 +28,7 @@ pub const Context = struct {
             \\   Arguments: <path>, <start_line>, <end_line>, <new_text>
             \\4. run_shell
             \\   Arguments: <command>
+            \\   Note: Commands MUST exit automatically and quickly. Never run interactive commands (like vim) or blocking servers (like npm start).
             \\5. search_code
             \\   Arguments: <query>
             \\
