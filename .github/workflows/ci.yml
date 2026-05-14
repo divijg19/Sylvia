@@ -8,6 +8,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -20,6 +23,16 @@ jobs:
         uses: mlugg/setup-zig@v1
         with:
           version: 0.15.2
+
+      - name: Cache Zig build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/zig
+            .zig-cache
+          key: ${{ runner.os }}-zig-${{ hashFiles('build.zig', 'src/**') }}
+          restore-keys: |
+            ${{ runner.os }}-zig-
 
       - name: Check formatting
         run: zig fmt --check src/ build.zig
