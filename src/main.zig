@@ -97,7 +97,7 @@ pub fn main() !void {
             if (arg.len > 1 and std.mem.startsWith(u8, arg, "@")) {
                 const file_path = arg[1..];
                 if (std.fs.cwd().readFileAlloc(allocator, file_path, 1024 * 1024 * 5)) |content| {
-                    const safe_content = try truncator.truncate(allocator, content, 12000);
+                    const safe_content = try truncator.truncate(allocator, content, 3000);
                     defer allocator.free(safe_content);
                     try injected_files.writer(allocator).print("\n\n--- File: {s} ---\n{s}\n", .{ file_path, safe_content });
                     allocator.free(content);
