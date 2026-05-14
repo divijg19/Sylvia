@@ -39,7 +39,7 @@ jobs:
           version: 0.15.2
 
       - name: Build release binary
-        run: zig build -Doptimize=ReleaseSafe -Dstrip=true -Dtarget=${{ matrix.target }}
+        run: zig build -Doptimize=ReleaseSafe -Dtarget=${{ matrix.target }}
 
       - name: Package release artifact
         id: package
