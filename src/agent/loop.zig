@@ -55,7 +55,7 @@ fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall) ![]const u8 {
     } else if (std.mem.eql(u8, tc.name, "run_shell")) {
         const command = tc.args.get("command") orelse return allocator.dupe(u8, "Error: Missing 'command' argument.");
 
-        const action_desc = try std.fmt.allocPrint(allocator, "Run shell command: {s}", .{command});
+        const action_desc = try std.fmt.allocPrint(allocator, "Run shell command: {s}\n   (WARNING: Do not approve blocking, infinite, or interactive commands like 'top' or servers!)", .{command});
         defer allocator.free(action_desc);
 
         const allowed = prompt.askPermission(action_desc) catch |err| {
