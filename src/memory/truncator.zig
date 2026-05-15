@@ -30,3 +30,17 @@ test "Truncator halves large text" {
     try testing.expect(std.mem.endsWith(u8, result, "BBB"));
     try testing.expect(std.mem.indexOf(u8, result, "[SYLVIA: TRUNCATED 4 BYTES") != null);
 }
+
+test "Truncator ignores small strings" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    const small = "hello";
+    const res = try truncate(allocator, small, 10);
+    defer allocator.free(res);
+
+    // Should be identical to input
+    try testing.expectEqualStrings(small, res);
+    // Ensure no truncation marker
+    try testing.expect(std.mem.indexOf(u8, res, "[SYLVIA: TRUNCATED") == null);
+}

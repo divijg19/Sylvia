@@ -27,11 +27,12 @@ fn printHelp() void {
         \\Options:
         \\  --url <url>      API Base URL (Default: http://localhost:11434/v1)
         \\  --model <name>   LLM Model Name (Default: qwen2.5-coder:7b)
+        \\  --engine <name>  Engine profile (e.g., groq, llama-server)
         \\  --key <key>      API Key (Optional, default: null)
         \\  --help, -h       Print this help message
         \\
         \\Environment Variables:
-        \\  SYLVIA_URL, SYLVIA_MODEL, SYLVIA_API_KEY
+        \\  SYLVIA_URL, SYLVIA_MODEL, SYLVIA_API_KEY, SYLVIA_ENGINE
         \\
     ;
 
@@ -69,6 +70,7 @@ pub fn main() !void {
     if (env_map.get("SYLVIA_URL")) |url| config.url = url;
     if (env_map.get("SYLVIA_MODEL")) |model| config.model = model;
     if (env_map.get("SYLVIA_API_KEY")) |key| config.api_key = key;
+    var engine_str: []const u8 = env_map.get("SYLVIA_ENGINE") orelse "";
     if (env_map.get("SYLVIA_MAX_CONTEXT")) |ctx_str| {
         config.max_context = std.fmt.parseInt(usize, ctx_str, 10) catch |err| {
             std.log.err("Invalid SYLVIA_MAX_CONTEXT value '{s}': {any}", .{ ctx_str, err });
@@ -85,6 +87,8 @@ pub fn main() !void {
     var management_cmd: ?[]const u8 = null;
     var task_buffer: std.ArrayList(u8) = .empty;
     defer task_buffer.deinit(allocator);
+    var explicit_url = false;
+    var explicit_model = false;
 
     const is_piped = !std.fs.File.stdin().isTty();
     if (is_piped) {
@@ -102,8 +106,12 @@ pub fn main() !void {
             return;
         } else if (std.mem.eql(u8, arg, "--url")) {
             config.url = args.next() orelse return error.MissingArgument;
+            explicit_url = true;
         } else if (std.mem.eql(u8, arg, "--model")) {
             config.model = args.next() orelse return error.MissingArgument;
+            explicit_model = true;
+        } else if (std.mem.eql(u8, arg, "--engine")) {
+            engine_str = args.next() orelse return error.MissingArgument;
         } else if (std.mem.eql(u8, arg, "--key")) {
             config.api_key = args.next() orelse return error.MissingArgument;
         } else if (std.mem.eql(u8, arg, "ping") or std.mem.eql(u8, arg, "doctor") or std.mem.eql(u8, arg, "version") or std.mem.eql(u8, arg, "help")) {
@@ -128,6 +136,13 @@ pub fn main() !void {
             printHelp();
             return error.InvalidArgument;
         }
+    }
+
+    if (std.mem.eql(u8, engine_str, "groq")) {
+        if (!explicit_url) config.url = "https://api.groq.com/openai/v1";
+        if (!explicit_model) config.model = "llama3-70b-8192";
+    } else if (std.mem.eql(u8, engine_str, "llama-server")) {
+        if (!explicit_url) config.url = "http://127.0.0.1:8080/v1";
     }
 
     // 4. Route the Command
