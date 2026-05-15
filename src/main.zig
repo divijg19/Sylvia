@@ -14,11 +14,14 @@ fn printHelp() void {
     const help_text =
         \\Sylvia - Lightweight Local Coding Agent
         \\
-        \\Usage: sylvia [command] [options]
+        \\Usage: sylvia [task] [@file...] [options]
+        \\   or: sylvia [command] [options]
         \\
         \\Commands:
         \\  ping       Test the connection to the LLM endpoint (v0.0.3)
-        \\  run        Run the agentic loop (v0.1.0+)
+        \\  doctor     Test LLM connection and active config
+        \\  version    Print version
+        \\  help       Print this help message
         \\
         \\Options:
         \\  --url <url>      API Base URL (Default: http://localhost:11434/v1)
@@ -71,10 +74,9 @@ pub fn main() !void {
 
     _ = args.skip(); // Skip the executable path
 
-    var command: ?[]const u8 = null;
-    var task_string: ?[]const u8 = null;
-    var injected_files: std.ArrayList(u8) = .empty;
-    defer injected_files.deinit(allocator);
+    var management_cmd: ?[]const u8 = null;
+    var task_buffer: std.ArrayList(u8) = .empty;
+    defer task_buffer.deinit(allocator);
 
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
@@ -86,29 +88,20 @@ pub fn main() !void {
             config.model = args.next() orelse return error.MissingArgument;
         } else if (std.mem.eql(u8, arg, "--key")) {
             config.api_key = args.next() orelse return error.MissingArgument;
-        } else if (command == null and arg.len > 0 and arg[0] != '-') {
-            command = arg;
-
-            // If the command is 'run', the very next argument must be our task string.
-            if (std.mem.eql(u8, arg, "run")) {
-                task_string = args.next();
+        } else if (std.mem.eql(u8, arg, "ping") or std.mem.eql(u8, arg, "doctor") or std.mem.eql(u8, arg, "version") or std.mem.eql(u8, arg, "help")) {
+            management_cmd = arg;
+        } else if (arg.len > 1 and std.mem.startsWith(u8, arg, "@")) {
+            const file_path = arg[1..];
+            if (std.fs.cwd().readFileAlloc(allocator, file_path, 1024 * 1024 * 5)) |content| {
+                const safe_content = try truncator.truncate(allocator, content, 3000);
+                defer allocator.free(safe_content);
+                try task_buffer.writer(allocator).print("\n\n--- File: {s} ---\n{s}\n", .{ file_path, safe_content });
+                allocator.free(content);
+            } else |err| {
+                std.log.warn("Could not read injected file {s}: {any}", .{ file_path, err });
             }
-        } else if (command != null and std.mem.eql(u8, command.?, "run") and task_string != null) {
-            if (arg.len > 1 and std.mem.startsWith(u8, arg, "@")) {
-                const file_path = arg[1..];
-                if (std.fs.cwd().readFileAlloc(allocator, file_path, 1024 * 1024 * 5)) |content| {
-                    const safe_content = try truncator.truncate(allocator, content, 3000);
-                    defer allocator.free(safe_content);
-                    try injected_files.writer(allocator).print("\n\n--- File: {s} ---\n{s}\n", .{ file_path, safe_content });
-                    allocator.free(content);
-                } else |err| {
-                    std.log.warn("Could not read injected file {s}: {any}", .{ file_path, err });
-                }
-            } else {
-                std.log.err("Unknown argument or extra command: {s}", .{arg});
-                printHelp();
-                return error.InvalidArgument;
-            }
+        } else if (arg.len > 0 and arg[0] != '-') {
+            try task_buffer.writer(allocator).print("{s} ", .{arg});
         } else {
             std.log.err("Unknown argument or extra command: {s}", .{arg});
             printHelp();
@@ -117,41 +110,35 @@ pub fn main() !void {
     }
 
     // 4. Route the Command
-    if (command) |parsed_cmd| {
-        if (std.mem.eql(u8, parsed_cmd, "help")) {
-            printHelp();
-        } else if (std.mem.eql(u8, parsed_cmd, "ping")) {
-            std.log.info("Executing PING command...", .{});
-            std.log.info("Target URL: {s}", .{config.url});
-            std.log.info("Model: {s}", .{config.model});
+    if (management_cmd) |parsed_cmd| {
+        if (std.mem.eql(u8, parsed_cmd, "version")) {
+            var stdout_buf: [64]u8 = undefined;
+            var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
+            const stdout = &stdout_writer.interface;
+            stdout.print("Sylvia v0.7.0\n", .{}) catch return;
+            stdout.flush() catch return;
+            return;
+        } else if (std.mem.eql(u8, parsed_cmd, "doctor") or std.mem.eql(u8, parsed_cmd, "ping")) {
+            std.log.info("Active config:", .{});
+            std.log.info("  URL: {s}", .{config.url});
+            std.log.info("  Model: {s}", .{config.model});
+            std.log.info("  Key: {s}", .{config.api_key orelse "(null)"});
 
             client.pingProvider(allocator, config) catch |err| {
                 std.log.err("Ping failed with error: {any}", .{err});
             };
-        } else if (std.mem.eql(u8, parsed_cmd, "run")) {
-            // Check if the task string was successfully captured
-            if (task_string) |task| {
-                if (injected_files.items.len > 0) {
-                    const final_task = try std.fmt.allocPrint(allocator, "{s}{s}", .{ task, injected_files.items });
-                    defer allocator.free(final_task);
-
-                    loop.runLoop(allocator, config, final_task) catch |err| {
-                        std.log.err("Agent loop crashed: {any}", .{err});
-                    };
-                } else {
-                    loop.runLoop(allocator, config, task) catch |err| {
-                        std.log.err("Agent loop crashed: {any}", .{err});
-                    };
-                }
-            } else {
-                std.log.err("Missing task. Example: sylvia run \"list files in src\"", .{});
-                return error.MissingArgument;
-            }
+        } else if (std.mem.eql(u8, parsed_cmd, "help")) {
+            printHelp();
         } else {
             std.log.err("Unknown command: {s}", .{parsed_cmd});
             printHelp();
             return error.UnknownCommand;
         }
+    } else if (task_buffer.items.len > 0) {
+        const task = std.mem.trimRight(u8, task_buffer.items, " ");
+        loop.runLoop(allocator, config, task) catch |err| {
+            std.log.err("Agent loop crashed: {any}", .{err});
+        };
     } else {
         printHelp();
     }
