@@ -118,7 +118,9 @@ pub fn main() !void {
 
     // 4. Route the Command
     if (command) |parsed_cmd| {
-        if (std.mem.eql(u8, parsed_cmd, "ping")) {
+        if (std.mem.eql(u8, parsed_cmd, "help")) {
+            printHelp();
+        } else if (std.mem.eql(u8, parsed_cmd, "ping")) {
             std.log.info("Executing PING command...", .{});
             std.log.info("Target URL: {s}", .{config.url});
             std.log.info("Model: {s}", .{config.model});
