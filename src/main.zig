@@ -1,5 +1,4 @@
 const std = @import("std");
-const posix = std.posix;
 const loop = @import("agent/loop.zig");
 const client = @import("llm/client.zig");
 const truncator = @import("memory/truncator.zig");
@@ -9,6 +8,7 @@ pub const Config = struct {
     url: []const u8,
     model: []const u8,
     api_key: ?[]const u8,
+    max_context: usize,
 };
 
 fn printHelp() void {
@@ -63,11 +63,18 @@ pub fn main() !void {
         .url = "http://localhost:11434/v1",
         .model = "qwen2.5-coder:7b",
         .api_key = null,
+        .max_context = 4000,
     };
 
     if (env_map.get("SYLVIA_URL")) |url| config.url = url;
     if (env_map.get("SYLVIA_MODEL")) |model| config.model = model;
     if (env_map.get("SYLVIA_API_KEY")) |key| config.api_key = key;
+    if (env_map.get("SYLVIA_MAX_CONTEXT")) |ctx_str| {
+        config.max_context = std.fmt.parseInt(usize, ctx_str, 10) catch |err| {
+            std.log.err("Invalid SYLVIA_MAX_CONTEXT value '{s}': {any}", .{ ctx_str, err });
+            return error.InvalidEnvironment;
+        };
+    }
 
     // 3. Parse Command Line Arguments
     var args = try std.process.argsWithAllocator(allocator);
@@ -79,7 +86,7 @@ pub fn main() !void {
     var task_buffer: std.ArrayList(u8) = .empty;
     defer task_buffer.deinit(allocator);
 
-    const is_piped = !posix.isatty(posix.STDIN_FILENO);
+    const is_piped = !std.fs.File.stdin().isTty();
     if (is_piped) {
         const stdin_content = try std.fs.File.stdin().readToEndAlloc(allocator, 1024 * 1024 * 5);
         defer allocator.free(stdin_content);
@@ -111,6 +118,9 @@ pub fn main() !void {
             } else |err| {
                 std.log.warn("Could not read injected file {s}: {any}", .{ file_path, err });
             }
+        } else if (std.mem.eql(u8, arg, "@")) {
+            std.log.err("Lone '@' provided. If you meant to inject a file, specify a path (e.g., @src/main.zig).", .{});
+            return error.InvalidArgument;
         } else if (arg.len > 0 and arg[0] != '-') {
             try task_buffer.writer(allocator).print("{s} ", .{arg});
         } else {

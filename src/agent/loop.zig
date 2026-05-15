@@ -165,7 +165,7 @@ pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8) !
                     raw_obs = try executeTool(turn_alloc, tc);
                 }
 
-                const truncated_obs = try truncator.truncate(turn_alloc, raw_obs, 2000);
+                const truncated_obs = try truncator.truncate(turn_alloc, raw_obs, config.max_context);
 
                 std.log.info("[Observation]\n{s}\n", .{truncated_obs});
 
