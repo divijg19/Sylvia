@@ -1,4 +1,5 @@
 const std = @import("std");
+const posix = std.posix;
 const loop = @import("agent/loop.zig");
 const client = @import("llm/client.zig");
 const truncator = @import("memory/truncator.zig");
@@ -77,6 +78,16 @@ pub fn main() !void {
     var management_cmd: ?[]const u8 = null;
     var task_buffer: std.ArrayList(u8) = .empty;
     defer task_buffer.deinit(allocator);
+
+    const is_piped = !posix.isatty(posix.STDIN_FILENO);
+    if (is_piped) {
+        const stdin_content = try std.fs.File.stdin().readToEndAlloc(allocator, 1024 * 1024 * 5);
+        defer allocator.free(stdin_content);
+
+        if (stdin_content.len > 0) {
+            try task_buffer.writer(allocator).print("\n--- Piped Input ---\n{s}\n\n", .{stdin_content});
+        }
+    }
 
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
