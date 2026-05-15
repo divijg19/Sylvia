@@ -18,7 +18,8 @@ pub fn askPermission(action_desc: []const u8) !bool {
     if (bytes_read > 0) {
         const line = buf[0..bytes_read];
         const trimmed = std.mem.trim(u8, line, "\r\n ");
-        if (std.mem.eql(u8, trimmed, "y") or std.mem.eql(u8, trimmed, "Y")) {
+        // Accept 'y', 'Y', 'yes', 'Yes', etc. — treat any input starting with 'y' or 'Y' as affirmative.
+        if (trimmed.len > 0 and (trimmed[0] == 'y' or trimmed[0] == 'Y')) {
             return true;
         }
     }

@@ -194,6 +194,10 @@ pub fn replaceLines(allocator: std.mem.Allocator, file_path: []const u8, start_l
         return allocator.dupe(u8, "Error: Invalid line range.");
     }
 
+    const backup_path = try std.fmt.allocPrint(allocator, "{s}.bak", .{file_path});
+    defer allocator.free(backup_path);
+    std.fs.cwd().copyFile(file_path, std.fs.cwd(), backup_path, .{}) catch |err| std.log.warn("Could not create backup: {any}", .{err});
+
     const file = std.fs.cwd().openFile(file_path, .{ .mode = .read_write }) catch |err| {
         return std.fmt.allocPrint(allocator, "Error opening file: {any}", .{err});
     };
@@ -221,8 +225,13 @@ pub fn replaceLines(allocator: std.mem.Allocator, file_path: []const u8, start_l
     var line_num: usize = 1;
     var inserted = false;
     var iterator = std.mem.splitSequence(u8, content, "\n");
+    const has_trailing_newline = content.len > 0 and content[content.len - 1] == '\n';
 
     while (iterator.next()) |line| {
+        if (has_trailing_newline and line.len == 0 and line_num == total_lines) {
+            break;
+        }
+
         if (line_num < start_line or line_num > end_line) {
             try writer.writeAll(line);
             try writer.writeByte('\n');
@@ -241,5 +250,73 @@ pub fn replaceLines(allocator: std.mem.Allocator, file_path: []const u8, start_l
     try file.setEndPos(0);
     try file.writeAll(output.items);
 
-    return std.fmt.allocPrint(allocator, "Successfully replaced lines in {s}.", .{file_path});
+    return std.fmt.allocPrint(allocator, "Successfully replaced lines in {s}. (Original saved as {s}.bak)", .{ file_path, file_path });
+}
+
+// --- Tests ---
+
+test "fs tools: read, extract, replace, and backup" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const file_path = "test_dummy.zig";
+    const backup_path = "test_dummy.zig.bak";
+    defer std.fs.cwd().deleteFile(file_path) catch {};
+    defer std.fs.cwd().deleteFile(backup_path) catch {};
+
+    {
+        const file = try std.fs.cwd().createFile(file_path, .{});
+        defer file.close();
+        try file.writeAll("Line 1\nLine 2\nLine 3\n");
+    }
+
+    const read_result = try readFile(allocator, file_path);
+    defer allocator.free(read_result);
+    try testing.expect(std.mem.indexOf(u8, read_result, "   2 | Line 2") != null);
+
+    const extract_result = try extractLines(allocator, file_path, 2, 3);
+    defer allocator.free(extract_result);
+    try testing.expectEqualStrings("Line 2\nLine 3\n", extract_result);
+
+    const replace_result = try replaceLines(allocator, file_path, 2, 2, "Replaced 2");
+    defer allocator.free(replace_result);
+    try testing.expect(std.mem.indexOf(u8, replace_result, "Successfully replaced lines in test_dummy.zig") != null);
+
+    {
+        const file = try std.fs.cwd().openFile(file_path, .{});
+        defer file.close();
+        const content = try file.readToEndAlloc(allocator, 1024 * 1024);
+        defer allocator.free(content);
+        try testing.expectEqualStrings("Line 1\nReplaced 2\nLine 3\n", content);
+    }
+
+    {
+        const file = try std.fs.cwd().openFile(backup_path, .{});
+        defer file.close();
+        const backup_content = try file.readToEndAlloc(allocator, 1024 * 1024);
+        defer allocator.free(backup_content);
+        try testing.expectEqualStrings("Line 1\nLine 2\nLine 3\n", backup_content);
+    }
+}
+
+test "searchCode finds matches" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    const file_path = "search_test.txt";
+    defer std.fs.cwd().deleteFile(file_path) catch {};
+
+    {
+        const file = try std.fs.cwd().createFile(file_path, .{});
+        defer file.close();
+        try file.writeAll("needle in haystack");
+    }
+
+    const result = try searchCode(allocator, ".", "needle");
+    defer allocator.free(result);
+
+    try testing.expect(std.mem.indexOf(u8, result, "search_test.txt:1: needle in haystack") != null);
 }

@@ -111,3 +111,53 @@ test "Parser extracts tool call and preserves indentation" {
     // Notice the 4 spaces of indentation are preserved perfectly!
     try testing.expectEqualStrings("fn foo() {\n    return true;\n}", old_text);
 }
+
+test "Parser prioritizes FINAL ANSWER over tool call" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    const mock_llm_response =
+        \\Some thought here
+        \\<sylvia_tool>
+        \\<name>replace_lines</name>
+        \\<path>dummy.zig</path>
+        \\<start_line>1</start_line>
+        \\<end_line>2</end_line>
+        \\<new_text>// replaced</new_text>
+        \\</sylvia_tool>
+        \\
+        \\FINAL ANSWER: The task is done.
+    ;
+
+    var result = try parseAction(allocator, mock_llm_response);
+    defer if (result == .tool_call) result.tool_call.args.deinit();
+
+    try testing.expect(result == .final_answer);
+    try testing.expectEqualStrings("The task is done.", result.final_answer);
+}
+
+test "Parser extracts replace_lines arguments" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+
+    const mock_llm_response =
+        \\ACTION:
+        \\<sylvia_tool>
+        \\<name>replace_lines</name>
+        \\<path>dummy.zig</path>
+        \\<start_line>5</start_line>
+        \\<end_line>7</end_line>
+        \\<new_text>// replaced content</new_text>
+        \\</sylvia_tool>
+    ;
+
+    var result = try parseAction(allocator, mock_llm_response);
+    defer if (result == .tool_call) result.tool_call.args.deinit();
+
+    try testing.expect(result == .tool_call);
+    const tc = result.tool_call;
+    const s = tc.args.get("start_line").?;
+    const e = tc.args.get("end_line").?;
+    try testing.expectEqualStrings("5", s);
+    try testing.expectEqualStrings("7", e);
+}
