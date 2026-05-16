@@ -106,7 +106,7 @@ pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8) !
     var last_action_hash: u64 = 0;
 
     while (step < max_steps) : (step += 1) {
-        std.log.info("\n================================", .{});
+        std.log.info("================================", .{});
         std.log.info("          STEP {d} / {d}", .{ step + 1, max_steps });
         std.log.info("================================\n", .{});
 
