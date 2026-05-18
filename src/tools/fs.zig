@@ -1,5 +1,6 @@
 const std = @import("std");
 
+/// Creates a new file exclusively to avoid accidental overwrites.
 pub fn createFile(allocator: std.mem.Allocator, file_path: []const u8, content: []const u8) ![]const u8 {
     const file = std.fs.cwd().createFile(file_path, .{ .exclusive = true }) catch |err| {
         if (err == error.PathAlreadyExists) return allocator.dupe(u8, "Error: File already exists. Use replace_lines instead.");
