@@ -22,7 +22,13 @@ pub fn listFiles(allocator: std.mem.Allocator, dir_path: []const u8) ![]const u8
         if (std.mem.indexOf(u8, entry.path, ".git") != null or
             std.mem.indexOf(u8, entry.path, "node_modules") != null or
             std.mem.indexOf(u8, entry.path, ".zig-cache") != null or
-            std.mem.indexOf(u8, entry.path, "zig-out") != null)
+            std.mem.indexOf(u8, entry.path, "zig-out") != null or
+            std.mem.indexOf(u8, entry.path, "target") != null or
+            std.mem.indexOf(u8, entry.path, "build") != null or
+            std.mem.indexOf(u8, entry.path, "dist") != null or
+            std.mem.indexOf(u8, entry.path, ".venv") != null or
+            std.mem.indexOf(u8, entry.path, "__pycache__") != null or
+            std.mem.indexOf(u8, entry.path, ".next") != null)
         {
             continue;
         }
@@ -59,7 +65,13 @@ pub fn searchCode(allocator: std.mem.Allocator, dir_path: []const u8, query: []c
         if (std.mem.indexOf(u8, entry.path, ".git") != null or
             std.mem.indexOf(u8, entry.path, "node_modules") != null or
             std.mem.indexOf(u8, entry.path, ".zig-cache") != null or
-            std.mem.indexOf(u8, entry.path, "zig-out") != null)
+            std.mem.indexOf(u8, entry.path, "zig-out") != null or
+            std.mem.indexOf(u8, entry.path, "target") != null or
+            std.mem.indexOf(u8, entry.path, "build") != null or
+            std.mem.indexOf(u8, entry.path, "dist") != null or
+            std.mem.indexOf(u8, entry.path, ".venv") != null or
+            std.mem.indexOf(u8, entry.path, "__pycache__") != null or
+            std.mem.indexOf(u8, entry.path, ".next") != null)
         {
             continue;
         }

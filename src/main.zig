@@ -29,6 +29,7 @@ fn printHelp() void {
         \\  --model <name>   LLM Model Name (Default: qwen2.5-coder:7b)
         \\  --engine <name>  Engine profile (e.g., groq, llama-server)
         \\  --key <key>      API Key (Optional, default: null)
+        \\  -y, --yes        Auto-approve all actions. Dangerous!
         \\  --plan           Exit after Phase 1 planning
         \\  --help, -h       Print this help message
         \\
@@ -91,6 +92,7 @@ pub fn main() !void {
     var explicit_url = false;
     var explicit_model = false;
     var plan_only: bool = false;
+    var auto_yes: bool = false;
 
     const is_piped = !std.fs.File.stdin().isTty();
     if (is_piped) {
@@ -118,6 +120,8 @@ pub fn main() !void {
             config.api_key = args.next() orelse return error.MissingArgument;
         } else if (std.mem.eql(u8, arg, "--plan")) {
             plan_only = true;
+        } else if (std.mem.eql(u8, arg, "-y") or std.mem.eql(u8, arg, "--yes")) {
+            auto_yes = true;
         } else if (std.mem.eql(u8, arg, "ping") or std.mem.eql(u8, arg, "doctor") or std.mem.eql(u8, arg, "version") or std.mem.eql(u8, arg, "help")) {
             management_cmd = arg;
         } else if (arg.len > 1 and std.mem.startsWith(u8, arg, "@")) {
@@ -193,7 +197,7 @@ pub fn main() !void {
             allocator.free(rc);
         }
 
-        loop.runLoop(allocator, config, final_task_str, plan_only) catch |err| {
+        loop.runLoop(allocator, config, final_task_str, plan_only, auto_yes) catch |err| {
             std.log.err("Agent loop crashed: {any}", .{err});
         };
 
