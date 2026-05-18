@@ -159,6 +159,10 @@ pub fn main() !void {
             std.log.info("  URL: {s}", .{config.url});
             std.log.info("  Model: {s}", .{config.model});
             std.log.info("  Key: {s}", .{config.api_key orelse "(null)"});
+            std.log.info("  Max Context: {d}", .{config.max_context});
+            if (engine_str.len > 0) {
+                std.log.info("  Engine: {s}", .{engine_str});
+            }
 
             client.pingProvider(allocator, config) catch |err| {
                 std.log.err("Ping failed with error: {any}", .{err});
@@ -178,4 +182,17 @@ pub fn main() !void {
     } else {
         printHelp();
     }
+}
+
+comptime {
+    std.testing.refAllDecls(@This());
+    _ = @import("agent/loop.zig");
+    _ = @import("llm/client.zig");
+    _ = @import("llm/parser.zig");
+    _ = @import("memory/context.zig");
+    _ = @import("memory/truncator.zig");
+    _ = @import("tools/fs.zig");
+    _ = @import("tools/shell.zig");
+    _ = @import("ui/prompt.zig");
+    _ = @import("ui/tui.zig");
 }
