@@ -1,31 +1,42 @@
 const std = @import("std");
+
 const Config = @import("../main.zig").Config;
 const Context = @import("../memory/context.zig").Context;
-const parser = @import("../llm/parser.zig");
-const fs = @import("../tools/fs.zig");
-const shell = @import("../tools/shell.zig");
-const prompt = @import("../ui/prompt.zig");
-const tui = @import("../ui/tui.zig");
 const client = @import("../llm/client.zig");
+const fs = @import("../tools/fs.zig");
+const parser = @import("../llm/parser.zig");
+const prompt = @import("../ui/prompt.zig");
+const shell = @import("../tools/shell.zig");
 const truncator = @import("../memory/truncator.zig");
+const tui = @import("../ui/tui.zig");
+
+/// Evaluates a required argument and returns a formatted missing error string if not found.
+fn getArg(tc: parser.ToolCall, key: []const u8) !?[]const u8 {
+    if (tc.args.get(key)) |v| return v;
+    return null;
+}
+
+fn missingArgErr(allocator: std.mem.Allocator, key: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(allocator, "Error: Missing '{s}' argument.", .{key});
+}
 
 /// The dispatcher routes parsed tool calls to the actual Zig functions
 fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall, auto_yes: bool) ![]const u8 {
     if (std.mem.eql(u8, tc.name, "list_files")) {
-        const path = tc.args.get("path") orelse return allocator.dupe(u8, "Error: Missing 'path' argument.");
+        const path = (try getArg(tc, "path")) orelse return missingArgErr(allocator, "path");
         return fs.listFiles(allocator, path) catch |err| {
             return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
         };
     } else if (std.mem.eql(u8, tc.name, "read_file")) {
-        const path = tc.args.get("path") orelse return allocator.dupe(u8, "Error: Missing 'path' argument.");
+        const path = (try getArg(tc, "path")) orelse return missingArgErr(allocator, "path");
         return fs.readFile(allocator, path) catch |err| {
             return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
         };
     } else if (std.mem.eql(u8, tc.name, "replace_lines")) {
-        const path = tc.args.get("path") orelse return allocator.dupe(u8, "Error: Missing 'path' argument.");
-        const start_line = tc.args.get("start_line") orelse return allocator.dupe(u8, "Error: Missing 'start_line' argument.");
-        const end_line = tc.args.get("end_line") orelse return allocator.dupe(u8, "Error: Missing 'end_line' argument.");
-        const new_text = tc.args.get("new_text") orelse return allocator.dupe(u8, "Error: Missing 'new_text' argument.");
+        const path = (try getArg(tc, "path")) orelse return missingArgErr(allocator, "path");
+        const start_line = (try getArg(tc, "start_line")) orelse return missingArgErr(allocator, "start_line");
+        const end_line = (try getArg(tc, "end_line")) orelse return missingArgErr(allocator, "end_line");
+        const new_text = (try getArg(tc, "new_text")) orelse return missingArgErr(allocator, "new_text");
 
         const start_int = std.fmt.parseInt(usize, start_line, 10) catch |err| {
             return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
@@ -53,7 +64,7 @@ fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall, auto_yes: bool
             return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
         };
     } else if (std.mem.eql(u8, tc.name, "run_shell")) {
-        const command = tc.args.get("command") orelse return allocator.dupe(u8, "Error: Missing 'command' argument.");
+        const command = (try getArg(tc, "command")) orelse return missingArgErr(allocator, "command");
 
         const action_desc = try std.fmt.allocPrint(allocator, "Run shell command: {s}\n   (WARNING: Do not approve blocking, infinite, or interactive commands like 'top' or servers!)", .{command});
         defer allocator.free(action_desc);
@@ -69,13 +80,13 @@ fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall, auto_yes: bool
             return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
         };
     } else if (std.mem.eql(u8, tc.name, "search_code")) {
-        const query = tc.args.get("query") orelse return allocator.dupe(u8, "Error: Missing 'query' argument.");
+        const query = (try getArg(tc, "query")) orelse return missingArgErr(allocator, "query");
         return fs.searchCode(allocator, ".", query) catch |err| {
             return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
         };
     } else if (std.mem.eql(u8, tc.name, "create_file")) {
-        const path = tc.args.get("path") orelse return allocator.dupe(u8, "Error: Missing 'path' argument.");
-        const content = tc.args.get("content") orelse return allocator.dupe(u8, "Error: Missing 'content' argument.");
+        const path = (try getArg(tc, "path")) orelse return missingArgErr(allocator, "path");
+        const content = (try getArg(tc, "content")) orelse return missingArgErr(allocator, "content");
 
         tui.printDiff("", content);
 
@@ -132,9 +143,8 @@ pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8, p
     var last_action_hash: u64 = 0;
 
     while (step < max_steps) : (step += 1) {
-        std.log.info("================================", .{});
-        std.log.info("          STEP {d} / {d}", .{ step + 1, max_steps });
-        std.log.info("================================\n", .{});
+        const step_header = try std.fmt.allocPrint(allocator, "\n================================\n          STEP {d} / {d}\n================================\n", .{ step + 1, max_steps });
+        tui.printColor(tui.yellow, step_header);
 
         // 1. THE ISOLATION ARENA
         // All temporary API buffers, file reads, and parsed JSON trees live here.
@@ -193,7 +203,8 @@ pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8, p
 
                 const truncated_obs = try truncator.truncate(turn_alloc, raw_obs, config.max_context);
 
-                std.log.info("[Observation]\n{s}\n", .{truncated_obs});
+                const obs_out = try std.fmt.allocPrint(turn_alloc, "[Observation]\n{s}\n", .{truncated_obs});
+                tui.printColor(tui.cyan, obs_out);
 
                 // Feed observation back into global context
                 const final_obs = try std.fmt.allocPrint(turn_alloc, "OBSERVATION:\n{s}", .{truncated_obs});
