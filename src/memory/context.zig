@@ -31,6 +31,9 @@ pub const Context = struct {
             \\   Note: Commands MUST exit automatically and quickly. Never run interactive commands (like vim) or blocking servers (like npm start).
             \\5. search_code
             \\   Arguments: <query>
+            \\6. create_file
+            \\   Arguments: <path>, <content>
+            \\   Note: Fails if the file already exists. Use replace_lines to edit existing files.
             \\
             \\RULES:
             \\- You MUST use this exact XML format to act. Replace the tags with the actual argument names.

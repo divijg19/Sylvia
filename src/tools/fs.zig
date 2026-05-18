@@ -1,5 +1,15 @@
 const std = @import("std");
 
+pub fn createFile(allocator: std.mem.Allocator, file_path: []const u8, content: []const u8) ![]const u8 {
+    const file = std.fs.cwd().createFile(file_path, .{ .exclusive = true }) catch |err| {
+        if (err == error.PathAlreadyExists) return allocator.dupe(u8, "Error: File already exists. Use replace_lines instead.");
+        return std.fmt.allocPrint(allocator, "Error creating file: {any}", .{err});
+    };
+    defer file.close();
+    try file.writeAll(content);
+    return std.fmt.allocPrint(allocator, "Successfully created file {s}.", .{file_path});
+}
+
 /// Returns a string tree of the directory. Ignores .git, node_modules, and zig-cache.
 pub fn listFiles(allocator: std.mem.Allocator, dir_path: []const u8) ![]const u8 {
     var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch |err| {
