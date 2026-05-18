@@ -77,7 +77,7 @@ fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall) ![]const u8 {
     return std.fmt.allocPrint(allocator, "Error: Tool '{s}' not found. Available: list_files, read_file, replace_lines, run_shell, search_code", .{tc.name});
 }
 
-pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8) !void {
+pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8, plan_only: bool) !void {
     std.log.info("Initializing Sylvia Cognitive Loop...", .{});
 
     tui.printColor(tui.yellow, "\n[PHASE 1: Generating Execution Plan...]");
@@ -91,6 +91,13 @@ pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8) !
 
     const enriched_task = try std.fmt.allocPrint(allocator, "TASK: {s}\n\nEXECUTION PLAN:\n{s}\n\nStick to this plan.", .{ task, plan_text });
     defer allocator.free(enriched_task);
+
+    tui.printColor(tui.cyan, plan_text);
+
+    if (plan_only) {
+        tui.printColor(tui.green, "\n[PLANNING COMPLETE. EXITING DUE TO --plan]\n");
+        return;
+    }
 
     tui.printColor(tui.yellow, "\n[PHASE 2: Autonomous Execution...]");
 
