@@ -10,7 +10,7 @@ const client = @import("../llm/client.zig");
 const truncator = @import("../memory/truncator.zig");
 
 /// The dispatcher routes parsed tool calls to the actual Zig functions
-fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall) ![]const u8 {
+fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall, auto_yes: bool) ![]const u8 {
     if (std.mem.eql(u8, tc.name, "list_files")) {
         const path = tc.args.get("path") orelse return allocator.dupe(u8, "Error: Missing 'path' argument.");
         return fs.listFiles(allocator, path) catch |err| {
@@ -42,7 +42,7 @@ fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall) ![]const u8 {
 
         tui.printDiff(old_text, new_text);
 
-        const allowed = prompt.askPermission(action_desc) catch |err| {
+        const allowed = prompt.askPermission(action_desc, auto_yes) catch |err| {
             return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
         };
         if (!allowed) {
@@ -58,7 +58,7 @@ fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall) ![]const u8 {
         const action_desc = try std.fmt.allocPrint(allocator, "Run shell command: {s}\n   (WARNING: Do not approve blocking, infinite, or interactive commands like 'top' or servers!)", .{command});
         defer allocator.free(action_desc);
 
-        const allowed = prompt.askPermission(action_desc) catch |err| {
+        const allowed = prompt.askPermission(action_desc, auto_yes) catch |err| {
             return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
         };
         if (!allowed) {
@@ -77,7 +77,7 @@ fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall) ![]const u8 {
     return std.fmt.allocPrint(allocator, "Error: Tool '{s}' not found. Available: list_files, read_file, replace_lines, run_shell, search_code", .{tc.name});
 }
 
-pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8, plan_only: bool) !void {
+pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8, plan_only: bool, auto_yes: bool) !void {
     std.log.info("Initializing Sylvia Cognitive Loop...", .{});
 
     tui.printColor(tui.yellow, "\n[PHASE 1: Generating Execution Plan...]");
@@ -169,7 +169,7 @@ pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8, p
                     raw_obs = try turn_alloc.dupe(u8, anti);
                 } else {
                     last_action_hash = current_hash;
-                    raw_obs = try executeTool(turn_alloc, tc);
+                    raw_obs = try executeTool(turn_alloc, tc, auto_yes);
                 }
 
                 const truncated_obs = try truncator.truncate(turn_alloc, raw_obs, config.max_context);
