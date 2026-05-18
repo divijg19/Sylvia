@@ -73,8 +73,27 @@ fn executeTool(allocator: std.mem.Allocator, tc: parser.ToolCall, auto_yes: bool
         return fs.searchCode(allocator, ".", query) catch |err| {
             return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
         };
+    } else if (std.mem.eql(u8, tc.name, "create_file")) {
+        const path = tc.args.get("path") orelse return allocator.dupe(u8, "Error: Missing 'path' argument.");
+        const content = tc.args.get("content") orelse return allocator.dupe(u8, "Error: Missing 'content' argument.");
+
+        tui.printDiff("", content);
+
+        const action_desc = try std.fmt.allocPrint(allocator, "Create new file: {s}", .{path});
+        defer allocator.free(action_desc);
+
+        const allowed = prompt.askPermission(action_desc, auto_yes) catch |err| {
+            return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
+        };
+        if (!allowed) {
+            return allocator.dupe(u8, "Observation: User denied this action. Try another approach.");
+        }
+
+        return fs.createFile(allocator, path, content) catch |err| {
+            return std.fmt.allocPrint(allocator, "Tool error: {any}", .{err});
+        };
     }
-    return std.fmt.allocPrint(allocator, "Error: Tool '{s}' not found. Available: list_files, read_file, replace_lines, run_shell, search_code", .{tc.name});
+    return std.fmt.allocPrint(allocator, "Error: Tool '{s}' not found. Available: list_files, read_file, replace_lines, run_shell, search_code, create_file", .{tc.name});
 }
 
 pub fn runLoop(allocator: std.mem.Allocator, config: Config, task: []const u8, plan_only: bool, auto_yes: bool) !void {
