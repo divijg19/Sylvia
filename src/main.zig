@@ -29,6 +29,7 @@ fn printHelp() void {
         \\  --model <name>   LLM Model Name (Default: qwen2.5-coder:7b)
         \\  --engine <name>  Engine profile (e.g., groq, llama-server)
         \\  --key <key>      API Key (Optional, default: null)
+        \\  --plan           Exit after Phase 1 planning
         \\  --help, -h       Print this help message
         \\
         \\Environment Variables:
@@ -89,6 +90,7 @@ pub fn main() !void {
     defer task_buffer.deinit(allocator);
     var explicit_url = false;
     var explicit_model = false;
+    var plan_only: bool = false;
 
     const is_piped = !std.fs.File.stdin().isTty();
     if (is_piped) {
@@ -114,6 +116,8 @@ pub fn main() !void {
             engine_str = args.next() orelse return error.MissingArgument;
         } else if (std.mem.eql(u8, arg, "--key")) {
             config.api_key = args.next() orelse return error.MissingArgument;
+        } else if (std.mem.eql(u8, arg, "--plan")) {
+            plan_only = true;
         } else if (std.mem.eql(u8, arg, "ping") or std.mem.eql(u8, arg, "doctor") or std.mem.eql(u8, arg, "version") or std.mem.eql(u8, arg, "help")) {
             management_cmd = arg;
         } else if (arg.len > 1 and std.mem.startsWith(u8, arg, "@")) {
@@ -175,10 +179,25 @@ pub fn main() !void {
             return error.UnknownCommand;
         }
     } else if (task_buffer.items.len > 0) {
-        const task = std.mem.trimRight(u8, task_buffer.items, " ");
-        loop.runLoop(allocator, config, task) catch |err| {
+        var final_task_str: []const u8 = std.mem.trimRight(u8, task_buffer.items, " ");
+        var free_final_task = false;
+
+        var rules_content: ?[]const u8 = std.fs.cwd().readFileAlloc(allocator, ".sylviarules", 1024 * 1024) catch null;
+        if (rules_content == null) rules_content = std.fs.cwd().readFileAlloc(allocator, ".cursorrules", 1024 * 1024) catch null;
+
+        if (rules_content) |rc| {
+            const safe_rules = try truncator.truncate(allocator, rc, config.max_context);
+            final_task_str = try std.fmt.allocPrint(allocator, "REPOSITORY RULES:\n{s}\n\nTASK:\n{s}", .{ safe_rules, final_task_str });
+            free_final_task = true;
+            allocator.free(safe_rules);
+            allocator.free(rc);
+        }
+
+        loop.runLoop(allocator, config, final_task_str, plan_only) catch |err| {
             std.log.err("Agent loop crashed: {any}", .{err});
         };
+
+        if (free_final_task) allocator.free(final_task_str);
     } else {
         printHelp();
     }
